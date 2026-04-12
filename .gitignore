@@ -1,0 +1,65 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.venv/
+venv/
+ENV/
+env/
+
+# General
+.env
+logs/
+
+# uv-specific
+.uv/
+uv.lock
+.python-version
+
+# pyproject.toml build artifacts
+*.egg
+*.whl
+.eggs/
+*.dist-info/
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+
+# Type checking
+.mypy_cache/
+.pytype/
+.pyre/
+.dmypy.json
+dmyproject.json
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Distribution / packaging
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# AI tools
+.slingshot/
