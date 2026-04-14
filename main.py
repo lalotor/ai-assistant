@@ -34,10 +34,19 @@ def main():
         workflow="ai_assistant_handler"
     )
 
-    # Test with an urgent billing issue
+    # Get user question from CLI
+    print("\n" + "="*60)
+    print("🤖 AI Assistant - Code Explainer")
+    print("="*60)
+    user_question = input("\n💬 Enter your technical question: ").strip()
+
+    if not user_question:
+        logger.warning("empty_input_provided")
+        print("\n⚠️  No question provided. Exiting...")
+        return
+
     initial_state = {
-        # "input": "Explain code snippet in Java: ```public class HelloWorld { public static void main(String[] args) { System.out.println(\"Hello, World!\"); } }```",
-        "input": "How to define an AWS RDS single instance? ",
+        "input": user_question,
         "messages": []
     }
 

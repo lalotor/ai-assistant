@@ -5,4 +5,3 @@ class AssistantState(TypedDict):
     decision: Literal["direct_answer", "call_tool"]
     tool_result: str | None
     output: str | None
-    messages: list[str] | None
