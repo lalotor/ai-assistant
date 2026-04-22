@@ -5,7 +5,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
 from app.agents.state import AssistantState
 from app.utils.llm import get_llm
-from app.tools.code_explainer import code_explainer
+from app.tools.code_explainer import code_explainer, CodeInput
 
 # Load variables from .env file
 load_dotenv()
@@ -13,7 +13,7 @@ load_dotenv()
 # Get logger for this module
 logger = structlog.get_logger(__name__)
 
-llm = get_llm(model="gpt-5-nano")
+llm = get_llm()
 
 def evaluate_question(state: AssistantState) -> Command[Literal["tool_call", "final_answer"]]:
     """Evaluate question"""
@@ -39,10 +39,10 @@ def tool_call(state: AssistantState) -> Command[Literal["evaluate_question"]]:
         input=state.get('input')
     )
 
-    tool_result = code_explainer(code_snippet=state.get('input'), llm=llm)
+    tool_result = code_explainer(CodeInput(code=state.get('input')))
 
     return Command(
-        update={"tool_result": tool_result},
+        update={"tool_result": tool_result.explanation},
         goto="evaluate_question"
     )
 
