@@ -4,8 +4,12 @@ from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
 from app.agents.state import AssistantState
+from app.agents.tool_decision import ToolDecision
 from app.utils.llm import get_llm
-from app.tools.code_explainer import code_explainer, CodeInput
+from app.tools.code_explainer import CodeInput
+from app.tools.doc_retriever import DocInput
+from app.tools.architecture_advisor import ArchInput
+from app.tools.registry import TOOLS
 
 # Load variables from .env file
 load_dotenv()
@@ -16,7 +20,7 @@ logger = structlog.get_logger(__name__)
 llm = get_llm()
 
 def evaluate_question(state: AssistantState) -> Command[Literal["tool_call", "final_answer"]]:
-    """Evaluate question"""
+    """Evaluate question using structured LLM output for tool selection"""
     logger.info(
         "node_started",
         node="evaluate_question",
@@ -24,25 +28,73 @@ def evaluate_question(state: AssistantState) -> Command[Literal["tool_call", "fi
         tool_result=state.get('tool_result')
     )
 
-    if not state.get('tool_result'):
-        includes_code = validate_code_prompt(state.get('input')) == "YES"
-        if includes_code:
-            return Command(update={"decision": "call_tool"}, goto="tool_call")
+    # If we already have a tool result, go to final answer
+    if state.get('tool_result'):
+        return Command(update={"decision": "direct_answer"}, goto="final_answer")
 
-    return Command(update={"decision": "direct_answer"}, goto="final_answer")
+    # Use LLM with structured output to decide which tool to use
+    tool_decision = get_tool_decision(state.get('input'))
+    
+    logger.info(
+        "tool_decision_made",
+        selected_tool=tool_decision.tool,
+        reason=tool_decision.reason
+    )
+
+    # Update state with tool decision
+    update_dict = {
+        "selected_tool": tool_decision.tool,
+        "tool_reason": tool_decision.reason
+    }
+
+    # Route based on tool selection
+    if tool_decision.tool == "none":
+        return Command(update={**update_dict, "decision": "direct_answer"}, goto="final_answer")
+    else:
+        return Command(update={**update_dict, "decision": "call_tool"}, goto="tool_call")
 
 def tool_call(state: AssistantState) -> Command[Literal["evaluate_question"]]:
-    """Call tool"""
+    """Call the selected tool based on LLM decision"""
+    selected_tool = state.get('selected_tool')
+    user_input = state.get('input')
+    
     logger.info(
         "node_started",
         node="tool_call",
-        input=state.get('input')
+        selected_tool=selected_tool,
+        input=user_input
     )
 
-    tool_result = code_explainer(CodeInput(code=state.get('input')))
+    # Route to the appropriate tool based on selection
+    tool_result = None
+    
+    if selected_tool == "code_explainer":
+        result = TOOLS["code_explainer"]["function"](CodeInput(code=user_input))
+        tool_result = result.explanation
+    
+    elif selected_tool == "doc_retriever":
+        result = TOOLS["doc_retriever"]["function"](DocInput(query=user_input))
+        tool_result = result.context
+    
+    elif selected_tool == "architecture_advisor":
+        result = TOOLS["architecture_advisor"]["function"](ArchInput(question=user_input))
+        tool_result = result.advice
+    
+    else:
+        logger.error(
+            "unknown_tool_selected",
+            selected_tool=selected_tool
+        )
+        tool_result = f"Error: Unknown tool '{selected_tool}' was selected"
+
+    logger.info(
+        "tool_execution_completed",
+        selected_tool=selected_tool,
+        result_length=len(tool_result) if tool_result else 0
+    )
 
     return Command(
-        update={"tool_result": tool_result.explanation},
+        update={"tool_result": tool_result},
         goto="evaluate_question"
     )
 
@@ -51,11 +103,19 @@ def final_answer(state: AssistantState) -> dict:
     logger.info(
         "node_started",
         node="final_answer",
+        selected_tool=state.get('selected_tool'),
+        tool_reason=state.get('tool_reason'),
         tool_result=state.get('tool_result')
     )
 
     if state.get('tool_result'):
-        output = f"Since your question includes code, here is the explanation: {state.get('tool_result')}"
+        selected_tool = state.get('selected_tool', 'unknown')
+        tool_reason = state.get('tool_reason', 'No reason provided')
+        output = f"""**Tool Used:** {selected_tool}
+**Reason:** {tool_reason}
+
+**Result:**
+{state.get('tool_result')}"""
     else:
         output = f"Direct answer to your question: {get_direct_answer(state.get('input'))}"
 
@@ -63,32 +123,48 @@ def final_answer(state: AssistantState) -> dict:
         "output": output
     }
 
-def validate_code_prompt(question: str) -> str:
-    """"Validate if question includes code snippet or not"""
-    # Build the prompt with formatted context
-    includes_code_prompt = f"""
-    Validate if question includes code snippet or not:
+def get_tool_decision(question: str) -> ToolDecision:
+    """Use LLM with structured output to decide which tool to use."""
+    
+    # Build tool descriptions for the prompt from TOOLS registry
+    tool_options = "\n".join([
+        f"- {tool}: {metadata['description']}" 
+        for tool, metadata in TOOLS.items()
+    ])
+    
+    # Build the prompt for tool selection
+    tool_selection_prompt = f"""
+    You are an expert AI assistant that helps users by selecting the most appropriate tool.
+    
+    User Question:
     {question}
-
-    Guidelines:
-    - You are an expert AI Assistant
-    - Response only with "YES" or "NO"
+    
+    Available Tools:
+    {tool_options}
+    
+    Analyze the user's question and select the most appropriate tool.
+    Provide a brief reason for your selection.
+    
+    If no specific tool is needed, select "none" for a direct answer.
     """
 
     logger.info(
-        "validate_code_prompt",
+        "get_tool_decision",
         question=question,
-        prompt_length=len(includes_code_prompt)
+        prompt_length=len(tool_selection_prompt)
     )
 
-    response = llm.invoke(includes_code_prompt)
+    # Use structured output with Pydantic model
+    llm_with_structure = llm.with_structured_output(ToolDecision)
+    response = llm_with_structure.invoke(tool_selection_prompt)
 
     logger.info(
-        "validate_code_prompt",
-        response=response
+        "get_tool_decision_response",
+        tool=response.tool,
+        reason=response.reason
     )
 
-    return response.content
+    return response
 
 def get_direct_answer(question: str) -> str:
     """Get direct answer for the question without calling tool"""
