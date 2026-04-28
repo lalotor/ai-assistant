@@ -1,6 +1,6 @@
 import structlog
 from dotenv import load_dotenv
-from app.agents.tool_decision import ToolDecision
+from app.agents.model import ToolDecision
 from app.utils.llm import get_llm
 from app.tools.registry import TOOLS
 from app.agents.state import AgentState

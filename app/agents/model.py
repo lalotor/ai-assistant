@@ -56,3 +56,9 @@ class ToolDecision(BaseModel):
             ]
         }
     )
+
+class ReviewResult(BaseModel):
+    """Structured output model for LLM review results."""
+
+    final_answer: str = Field(description="The final answer to the user's question")
+    feedback: str = Field(description="Feedback about the draft answer")
