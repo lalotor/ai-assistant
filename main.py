@@ -2,6 +2,7 @@ import uuid
 import structlog
 from dotenv import load_dotenv
 from app.agents.graph import get_graph
+from app.agents.state import AgentState
 from app.config.logging_config import configure_logging
 from app.config.env_validator import validate_environment
 
@@ -36,7 +37,7 @@ def main():
 
     # Get user question from CLI
     print("\n" + "="*60)
-    print("🤖 AI Assistant - Code Explainer")
+    print("🤖 AI Assistant - Multi-Agent")
     print("="*60)
     user_question = input("\n💬 Enter your technical question: ").strip()
 
@@ -45,15 +46,14 @@ def main():
         print("\n⚠️  No question provided. Exiting...")
         return
 
-    initial_state = {
-        "input": user_question,
-        "messages": []
-    }
+    initial_state = AgentState(
+        user_input=user_question
+    )
 
     logger.info(
         "initial_state_created",
-        input=initial_state["input"],
-        content_length=len(initial_state["input"])
+        input=initial_state.user_input,
+        content_length=len(initial_state.user_input)
     )
 
     # Run with a thread_id for persistence
@@ -71,7 +71,7 @@ def main():
         final_result = graph.invoke(initial_state, config)
         logger.info(
             "question_answered",
-            output=final_result.get("output"),
+            output=final_result,
         )
         logger.info("question_answered_successfully")
     except Exception as e:
