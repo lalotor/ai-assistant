@@ -44,7 +44,7 @@ def reviewer_node(state: AgentState) -> AgentState:
     llm_with_structure = llm.with_structured_output(ReviewResult)
     response = llm_with_structure.invoke(review_prompt)
 
-    logger.info(
+    logger.debug(
         "review_complete",
         final_answer_length=len(response.final_answer),
         feedback=response.feedback

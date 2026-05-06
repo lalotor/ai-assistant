@@ -59,7 +59,7 @@ def worker_node(state: AgentState) -> AgentState:
     state.tool_output = str(tool_result)
     state.draft_answer = f"Tool result:\n{state.tool_output}"
 
-    logger.info(
+    logger.debug(
         "tool_execution_completed",
         draft_answer_length=len(state.draft_answer) if state.draft_answer else 0
     )

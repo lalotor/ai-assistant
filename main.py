@@ -73,7 +73,7 @@ def main():
             "question_answered",
             output=final_result,
         )
-        logger.info("question_answered_successfully")
+        logger.debug("question_answered_successfully")
     except Exception as e:
         logger.error(
             "workflow_resume_failed",
@@ -88,7 +88,7 @@ def main():
 def save_graph_image(graph):
     """Generate and save a visualization of the graph to a PNG file."""
     try:
-        logger.info("generating_graph_visualization")
+        logger.debug("generating_graph_visualization")
         # Generate the image data
         graph_image = graph.get_graph().draw_mermaid_png()
 
@@ -96,7 +96,7 @@ def save_graph_image(graph):
         with open("graph_image.png", "wb") as f:
             f.write(graph_image)
 
-        logger.info("graph_image_saved", filename="graph_image.png")
+        logger.debug("graph_image_saved", filename="graph_image.png")
     except Exception as e:
         logger.warning(
             "graph_visualization_failed",

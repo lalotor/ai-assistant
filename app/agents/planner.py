@@ -71,7 +71,7 @@ def get_tool_decision(question: str) -> ToolDecision:
     llm_with_structure = llm.with_structured_output(ToolDecision)
     response = llm_with_structure.invoke(tool_selection_prompt)
 
-    logger.info(
+    logger.debug(
         "get_tool_decision_response",
         tool=response.tool,
         reason=response.reason
