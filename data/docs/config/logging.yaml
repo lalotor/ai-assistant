@@ -1,0 +1,214 @@
+# Logging Configuration
+# Application-wide logging settings for structured logging and observability
+
+version: 1
+disable_existing_loggers: false
+
+# Formatters define the log message structure
+formatters:
+  # Standard formatter for file logs
+  standard:
+    format: '[%(asctime)s] %(levelname)s [%(name)s:%(lineno)d] - %(message)s'
+    datefmt: '%Y-%m-%d %H:%M:%S'
+  
+  # JSON formatter for structured logging (production)
+  json:
+    class: pythonjsonlogger.jsonlogger.JsonFormatter
+    format: '%(asctime)s %(levelname)s %(name)s %(message)s %(pathname)s %(lineno)d'
+  
+  # Detailed formatter for debugging
+  detailed:
+    format: '[%(asctime)s] %(levelname)s [%(name)s:%(funcName)s:%(lineno)d] [%(process)d:%(thread)d] - %(message)s'
+    datefmt: '%Y-%m-%d %H:%M:%S.%f'
+
+# Handlers define where logs are sent
+handlers:
+  # Console output (stdout)
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: standard
+    stream: ext://sys.stdout
+  
+  # Application log file
+  file:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: standard
+    filename: logs/app.log
+    maxBytes: 10485760  # 10MB
+    backupCount: 5
+    encoding: utf8
+  
+  # Error log file (errors and above)
+  error_file:
+    class: logging.handlers.RotatingFileHandler
+    level: ERROR
+    formatter: detailed
+    filename: logs/error.log
+    maxBytes: 10485760  # 10MB
+    backupCount: 10
+    encoding: utf8
+  
+  # JSON log file for structured logging
+  json_file:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: json
+    filename: logs/app.json
+    maxBytes: 10485760  # 10MB
+    backupCount: 5
+    encoding: utf8
+  
+  # Async queue handler for high-throughput logging
+  async_queue:
+    class: logging.handlers.QueueHandler
+    queue: queue.Queue
+    listener: logging.handlers.QueueListener
+
+# Loggers define logging behavior for specific modules
+loggers:
+  # Root logger (default)
+  root:
+    level: INFO
+    handlers:
+      - console
+      - file
+      - error_file
+  
+  # API module
+  api:
+    level: INFO
+    handlers:
+      - console
+      - file
+      - json_file
+    propagate: false
+  
+  # Ingestion module
+  ingestion:
+    level: INFO
+    handlers:
+      - console
+      - file
+      - json_file
+    propagate: false
+  
+  # Processor module
+  processor:
+    level: INFO
+    handlers:
+      - console
+      - file
+      - json_file
+    propagate: false
+  
+  # Comparator module
+  comparator:
+    level: DEBUG
+    handlers:
+      - console
+      - file
+      - json_file
+    propagate: false
+  
+  # Storage module
+  storage:
+    level: INFO
+    handlers:
+      - console
+      - file
+    propagate: false
+  
+  # Third-party libraries
+  urllib3:
+    level: WARNING
+    handlers:
+      - console
+    propagate: false
+  
+  boto3:
+    level: WARNING
+    handlers:
+      - console
+    propagate: false
+  
+  botocore:
+    level: WARNING
+    handlers:
+      - console
+    propagate: false
+
+# Environment-specific overrides
+environments:
+  development:
+    root:
+      level: DEBUG
+    handlers:
+      console:
+        level: DEBUG
+        formatter: detailed
+  
+  staging:
+    root:
+      level: INFO
+    handlers:
+      console:
+        level: INFO
+      json_file:
+        level: INFO
+  
+  production:
+    root:
+      level: WARNING
+    handlers:
+      console:
+        level: WARNING
+        formatter: json
+      json_file:
+        level: INFO
+      error_file:
+        level: ERROR
+
+# Log rotation settings
+rotation:
+  max_bytes: 10485760  # 10MB per file
+  backup_count: 5      # Keep 5 backup files
+  when: midnight       # Rotate at midnight
+  interval: 1          # Daily rotation
+
+# Performance settings
+performance:
+  async_logging: true
+  buffer_size: 1000
+  flush_interval: 5    # seconds
+
+# Security settings
+security:
+  sanitize_sensitive_data: true
+  sensitive_fields:
+    - password
+    - api_key
+    - token
+    - secret
+    - authorization
+  redaction_pattern: '***REDACTED***'
+
+# Observability integration
+observability:
+  # Prometheus metrics
+  metrics:
+    enabled: true
+    port: 9090
+  
+  # Distributed tracing
+  tracing:
+    enabled: false
+    service_name: ai-assistant-demo
+    jaeger_endpoint: http://localhost:14268/api/traces
+  
+  # Centralized logging
+  centralized:
+    enabled: false
+    elasticsearch_host: localhost:9200
+    index_pattern: logs-ai-assistant-%Y.%m.%d

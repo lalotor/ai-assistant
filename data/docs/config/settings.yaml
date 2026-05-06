@@ -1,0 +1,287 @@
+# Application Settings
+# Central configuration for the AI Assistant Demo application
+
+# Application metadata
+app:
+  name: ai-assistant-demo
+  version: 2.0.0
+  environment: development  # development, staging, production
+  debug: true
+  timezone: UTC
+
+# Server configuration
+server:
+  host: 0.0.0.0
+  port: 8000
+  workers: 4
+  timeout: 60
+  keepalive: 5
+  max_requests: 1000
+  max_requests_jitter: 100
+
+# API configuration
+api:
+  prefix: /api/v1
+  title: AI Assistant Demo API
+  description: Hybrid architecture demo with async processing
+  version: 2.0.0
+  docs_url: /docs
+  redoc_url: /redoc
+  openapi_url: /openapi.json
+  
+  # CORS settings
+  cors:
+    enabled: true
+    allow_origins:
+      - http://localhost:3000
+      - http://localhost:8000
+    allow_methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    allow_headers:
+      - '*'
+    allow_credentials: true
+  
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+    burst: 10
+
+# Database configuration
+database:
+  # PostgreSQL settings
+  postgres:
+    host: localhost
+    port: 5432
+    database: ai_assistant_demo
+    username: postgres
+    password: ${DB_PASSWORD}  # Use environment variable
+    pool_size: 10
+    max_overflow: 20
+    pool_timeout: 30
+    pool_recycle: 3600
+    echo: false  # SQL query logging
+  
+  # Connection string template
+  url: postgresql://${database.postgres.username}:${database.postgres.password}@${database.postgres.host}:${database.postgres.port}/${database.postgres.database}
+
+# Cache configuration
+cache:
+  # Redis settings
+  redis:
+    host: localhost
+    port: 6379
+    db: 0
+    password: ${REDIS_PASSWORD}
+    socket_timeout: 5
+    socket_connect_timeout: 5
+    max_connections: 50
+    decode_responses: true
+  
+  # Cache TTL settings (in seconds)
+  ttl:
+    default: 300      # 5 minutes
+    job_status: 60    # 1 minute
+    file_metadata: 3600  # 1 hour
+    results: 86400    # 24 hours
+
+# Message queue configuration
+queue:
+  # Queue type: sqs, rabbitmq, redis, memory
+  type: memory  # Use 'sqs' for production
+  
+  # SQS settings (for AWS deployment)
+  sqs:
+    region: us-east-1
+    endpoint_url: null  # Use default AWS endpoint
+    access_key_id: ${AWS_ACCESS_KEY_ID}
+    secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+    queues:
+      ingestion: ai-assistant-ingestion-queue
+      processing: ai-assistant-processing-queue
+      comparison: ai-assistant-comparison-queue
+      notification: ai-assistant-notification-queue
+  
+  # Queue processing settings
+  processing:
+    batch_size: 10
+    wait_time: 20  # Long polling (seconds)
+    visibility_timeout: 300  # 5 minutes
+    max_retries: 3
+    retry_delay: 60  # seconds
+    dead_letter_queue: ai-assistant-dlq
+
+# Storage configuration
+storage:
+  # S3-compatible object storage
+  s3:
+    bucket: ai-assistant-demo-files
+    region: us-east-1
+    endpoint_url: null  # Use default AWS endpoint
+    access_key_id: ${AWS_ACCESS_KEY_ID}
+    secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+    
+  # Local file storage (development)
+  local:
+    base_path: /tmp/ai-assistant-demo
+    max_file_size: 104857600  # 100MB
+  
+  # Storage type: s3, local
+  type: local  # Use 's3' for production
+
+# Processing configuration
+processing:
+  # Worker settings
+  workers:
+    count: 4
+    max_tasks_per_child: 100
+    timeout: 300  # 5 minutes
+  
+  # File processing
+  files:
+    max_size: 104857600  # 100MB
+    allowed_extensions:
+      - json
+      - xml
+      - csv
+      - txt
+    chunk_size: 8192  # bytes
+  
+  # Comparison settings
+  comparison:
+    algorithm: structural  # structural, semantic
+    normalization:
+      enabled: true
+      whitespace: true
+      numbers: true
+      strings: true
+      structure: true
+    diff_format: unified  # unified, context, ndiff
+
+# Java service configuration
+java_service:
+  enabled: true
+  host: localhost
+  port: 8080
+  base_url: http://localhost:8080
+  timeout: 30
+  endpoints:
+    process: /api/process
+    health: /actuator/health
+
+# Security configuration
+security:
+  # Authentication
+  auth:
+    enabled: false  # Enable in production
+    type: jwt  # jwt, oauth2, api_key
+    jwt:
+      secret_key: ${JWT_SECRET_KEY}
+      algorithm: HS256
+      expiration: 3600  # 1 hour
+  
+  # API keys
+  api_keys:
+    enabled: false
+    header_name: X-API-Key
+  
+  # Encryption
+  encryption:
+    enabled: false
+    algorithm: AES-256-GCM
+    key: ${ENCRYPTION_KEY}
+
+# Monitoring configuration
+monitoring:
+  # Health checks
+  health:
+    enabled: true
+    endpoint: /health
+    checks:
+      - database
+      - cache
+      - queue
+      - storage
+  
+  # Metrics
+  metrics:
+    enabled: true
+    endpoint: /metrics
+    prometheus:
+      enabled: true
+      port: 9090
+  
+  # Logging
+  logging:
+    level: INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    format: json  # json, standard, detailed
+    config_file: config/logging.yaml
+
+# Feature flags
+features:
+  async_processing: true
+  normalization: true
+  semantic_diff: false  # Coming in v3.0
+  real_time_updates: false  # Coming in v3.1
+  batch_operations: true
+  webhooks: false
+
+# Environment-specific overrides
+environments:
+  development:
+    app:
+      debug: true
+    server:
+      workers: 2
+    monitoring:
+      logging:
+        level: DEBUG
+  
+  staging:
+    app:
+      debug: false
+    storage:
+      type: s3
+    queue:
+      type: sqs
+    monitoring:
+      logging:
+        level: INFO
+  
+  production:
+    app:
+      debug: false
+    server:
+      workers: 8
+    storage:
+      type: s3
+    queue:
+      type: sqs
+    security:
+      auth:
+        enabled: true
+    monitoring:
+      logging:
+        level: WARNING
+
+# External services
+external_services:
+  # Notification service
+  notifications:
+    enabled: false
+    email:
+      provider: ses  # ses, smtp
+      from_address: noreply@ai-assistant-demo.com
+    slack:
+      enabled: false
+      webhook_url: ${SLACK_WEBHOOK_URL}
+  
+  # Analytics
+  analytics:
+    enabled: false
+    provider: google_analytics
+    tracking_id: ${GA_TRACKING_ID}
