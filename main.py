@@ -5,6 +5,7 @@ from app.agents.graph import get_graph
 from app.agents.state import AgentState
 from app.config.logging_config import configure_logging
 from app.config.env_validator import validate_environment
+from app.rag.chunking import chunk_markdown_document, chunk_code
 
 # Load environment variables
 load_dotenv()
@@ -25,6 +26,22 @@ logger = structlog.get_logger(__name__)
 
 def main():
     """Main function to run the AI assistant workflow."""
+
+    from app.rag.ingestion import load_documents
+    docs = load_documents()
+    for doc in docs:
+        if doc.type == ".md":
+            chunks = chunk_markdown_document(doc)
+        elif doc.type in [".py", ".js", ".java"]:
+            chunks = chunk_code(doc)
+            for doc in chunks:
+                logger.debug(
+                    "chunked_code",
+                    metadata=doc.metadata,
+                    content_length=len(doc.page_content),
+                    content=doc.page_content[:100]  # Log only the first 100 characters of code for brevity
+                )
+
     # Generate correlation ID for this email processing session
     correlation_id = str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(correlation_id=correlation_id)

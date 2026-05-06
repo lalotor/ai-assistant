@@ -12,5 +12,5 @@
 
 3. **Dependencies**
    ```bash
-   uv add langchain_core langchain-openai langgraph ipython python-dotenv structlog pytest pytest-cov pytest-mock
+   uv add langchain_core langchain-openai langgraph langchain-text-splitters ipython python-dotenv structlog pytest pytest-cov pytest-mock
    ```
