@@ -16,7 +16,6 @@ _vector_store: Optional[FAISS] = None
 # Default persistence path
 VECTOR_STORE_PATH = os.getenv("VECTOR_STORE_PATH", "data/vector_store")
 
-
 def get_vector_store() -> FAISS:
     """
     Get or initialize the global vector store instance.
@@ -78,7 +77,6 @@ def initialize_vector_store(force_rebuild: bool = False) -> FAISS:
 
     return vector_store
 
-
 def build_vector_store_from_documents() -> FAISS:
     """
     Build a new vector store from all documents in the data directory.
@@ -117,7 +115,6 @@ def build_vector_store_from_documents() -> FAISS:
 
     return vector_store
 
-
 def save_vector_store(vector_store: FAISS) -> None:
     """
     Persist the vector store to disk.
@@ -145,7 +142,6 @@ def save_vector_store(vector_store: FAISS) -> None:
             error=str(e),
             path=str(vector_store_path)
         )
-
 
 def add_documents_to_vector_store(new_chunks: list) -> None:
     """
