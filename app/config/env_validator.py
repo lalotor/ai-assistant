@@ -65,6 +65,25 @@ class EnvironmentValidator:
             description="Enable file-based logging",
             allowed_values=["true", "false"]
         ),
+        EnvVarConfig(
+            name="EMBEDDING_PROVIDER",
+            required=False,
+            default="openai",
+            description="Provider for embedding generation",
+            allowed_values=["openai"]
+        ),
+        EnvVarConfig(
+            name="VECTOR_STORE_PATH",
+            required=False,
+            default="data/vector_store",
+            description="Path to the vector store directory"
+        ),
+        EnvVarConfig(
+            name="SIMILARITY_THRESHOLD",
+            required=False,
+            default="1.2",
+            description="Similarity threshold for vector store retrieval (L2 distance)"
+        ),
     ]
     
     def __init__(self, strict_mode: bool = True):

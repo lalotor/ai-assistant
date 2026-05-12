@@ -1,12 +1,8 @@
 import structlog
-from dotenv import load_dotenv
 from app.agents.model import ToolDecision
 from app.utils.llm import get_llm
 from app.tools.registry import TOOLS
 from app.agents.state import AgentState
-
-# Load variables from .env file
-load_dotenv()
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -71,7 +67,7 @@ def get_tool_decision(question: str) -> ToolDecision:
     llm_with_structure = llm.with_structured_output(ToolDecision)
     response = llm_with_structure.invoke(tool_selection_prompt)
 
-    logger.info(
+    logger.debug(
         "get_tool_decision_response",
         tool=response.tool,
         reason=response.reason

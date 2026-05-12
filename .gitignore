@@ -16,6 +16,7 @@ env/
 # General
 .env
 logs/
+data/vector_store/
 
 # uv-specific
 .uv/

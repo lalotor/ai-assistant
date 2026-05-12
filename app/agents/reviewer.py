@@ -1,11 +1,7 @@
 import structlog
-from dotenv import load_dotenv
 from app.agents.model import ReviewResult
 from app.utils.llm import get_llm
 from app.agents.state import AgentState
-
-# Load variables from .env file
-load_dotenv()
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -44,7 +40,7 @@ def reviewer_node(state: AgentState) -> AgentState:
     llm_with_structure = llm.with_structured_output(ReviewResult)
     response = llm_with_structure.invoke(review_prompt)
 
-    logger.info(
+    logger.debug(
         "review_complete",
         final_answer_length=len(response.final_answer),
         feedback=response.feedback
