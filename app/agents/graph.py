@@ -1,14 +1,10 @@
 import structlog
-from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
 from app.agents.state import AgentState
 from app.agents.planner import planner_node
 from app.agents.worker import worker_node
 from app.agents.reviewer import reviewer_node
 from app.utils.llm import get_llm
-
-# Load variables from .env file
-load_dotenv()
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)

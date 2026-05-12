@@ -1,14 +1,16 @@
 import uuid
 import structlog
 from dotenv import load_dotenv
+
+# Load environment variables FIRST before any other imports
+# This ensures all modules can access environment variables when imported
+load_dotenv()
+
 from app.agents.graph import get_graph
 from app.agents.state import AgentState
 from app.config.logging_config import configure_logging
 from app.config.env_validator import validate_environment
-from app.rag.chunking import chunk_document
-
-# Load environment variables
-load_dotenv()
+from app.rag.vector_store import initialize_vector_store
 
 # Validate environment variables before proceeding
 # This ensures all required configuration is present
@@ -27,17 +29,9 @@ logger = structlog.get_logger(__name__)
 def main():
     """Main function to run the AI assistant workflow."""
 
-    from app.rag.ingestion import load_documents
-    docs = load_documents()
-    for doc in docs:
-        chunks = chunk_document(doc)
-        for doc in chunks:
-            logger.debug(
-                "chunked_document",
-                metadata=doc.metadata,
-                content_length=len(doc.page_content),
-                content=doc.page_content[:100]
-        )
+    logger.info("initializing_vector_store")
+    initialize_vector_store()
+    logger.info("vector_store_ready")
 
     # Generate correlation ID for this email processing session
     correlation_id = str(uuid.uuid4())

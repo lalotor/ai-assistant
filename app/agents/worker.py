@@ -1,14 +1,10 @@
 import structlog
-from dotenv import load_dotenv
 from app.utils.llm import get_llm
 from app.tools.registry import TOOLS
 from app.agents.state import AgentState
 from app.tools.code_explainer import CodeInput
 from app.tools.doc_retriever import DocInput
 from app.tools.architecture_advisor import ArchInput
-
-# Load variables from .env file
-load_dotenv()
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
