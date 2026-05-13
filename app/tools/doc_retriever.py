@@ -1,16 +1,10 @@
 import structlog
-from pydantic import BaseModel
+from app.contracts.tools import DocInput, DocOutput
 from app.rag.retriever import retrieve_context
 from app.rag.vector_store import get_vector_store
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
-
-class DocInput(BaseModel):
-    query: str
-
-class DocOutput(BaseModel):
-    context: str
 
 def doc_retriever(doc_input: DocInput) -> DocOutput:
     """Tool to retrieve documentation based on a query."""

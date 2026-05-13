@@ -1,7 +1,6 @@
 import structlog
-from app.agents.model import ReviewResult
 from app.utils.llm import get_llm
-from app.agents.state import AgentState
+from app.contracts.agent import AgentState, ReviewResult
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)

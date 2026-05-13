@@ -1,8 +1,8 @@
 import structlog
-from app.agents.model import ToolDecision
+from app.contracts.tools import ToolDecision
+from app.contracts.agent import AgentState
 from app.utils.llm import get_llm
 from app.tools.registry import TOOLS
-from app.agents.state import AgentState
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)

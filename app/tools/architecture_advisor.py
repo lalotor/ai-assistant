@@ -1,15 +1,9 @@
 import structlog
-from pydantic import BaseModel
+from app.contracts.tools import ArchInput, ArchOutput
 from app.utils.llm import get_llm
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
-
-class ArchInput(BaseModel):
-    question: str
-
-class ArchOutput(BaseModel):
-    advice: str
 
 def architecture_advisor(arch_input: ArchInput) -> ArchOutput:
     """Tool to provide architecture advice based on a question."""

@@ -1,7 +1,7 @@
 import structlog
 from app.utils.llm import get_llm
 from app.tools.registry import TOOLS
-from app.agents.state import AgentState
+from app.contracts.agent import AgentState
 from app.tools.code_explainer import CodeInput
 from app.tools.doc_retriever import DocInput
 from app.tools.architecture_advisor import ArchInput

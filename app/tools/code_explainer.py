@@ -1,15 +1,9 @@
 import structlog
-from pydantic import BaseModel
+from app.contracts.tools import CodeInput, CodeOutput
 from app.utils.llm import get_llm
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
-
-class CodeInput(BaseModel):
-    code: str
-
-class CodeOutput(BaseModel):
-    explanation: str
 
 def code_explainer(code_input: CodeInput) -> CodeOutput:
     """Tool to explain code snippets using an LLM."""

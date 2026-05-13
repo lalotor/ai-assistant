@@ -1,6 +1,5 @@
 import structlog
 import os
-from langchain_community.vectorstores import FAISS
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)

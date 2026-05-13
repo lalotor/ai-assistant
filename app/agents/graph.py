@@ -1,6 +1,6 @@
 import structlog
 from langgraph.graph import StateGraph, START, END
-from app.agents.state import AgentState
+from app.contracts.agent import AgentState
 from app.agents.planner import planner_node
 from app.agents.worker import worker_node
 from app.agents.reviewer import reviewer_node

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.agents.graph import get_graph
-from app.agents.state import AgentState
+from app.contracts.agent import AgentState
 from app.config.logging_config import configure_logging
 from app.config.env_validator import validate_environment
 from app.rag.vector_store import initialize_vector_store
