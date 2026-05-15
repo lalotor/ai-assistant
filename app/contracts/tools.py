@@ -33,7 +33,7 @@ class ToolDecision(BaseModel):
             ]
         }
     )
-    
+
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
@@ -57,14 +57,20 @@ class ToolDecision(BaseModel):
         }
     )
 
-class ReviewResult(BaseModel):
-    """Structured output model for LLM review results."""
+class ArchInput(BaseModel):
+    question: str
 
-    final_answer: str = Field(description="The final answer to the user's question")
-    feedback: str = Field(description="Feedback about the draft answer")
+class ArchOutput(BaseModel):
+    advice: str
 
-class LoadedDocument(BaseModel):
-    """Model representing a document loaded from the filesystem."""
-    content: str = Field(description="The textual content of the document")
-    source: str = Field(description="The source path of the document")
-    type: str = Field(description="The file type/extension of the document")
+class CodeInput(BaseModel):
+    code: str
+
+class CodeOutput(BaseModel):
+    explanation: str
+
+class DocInput(BaseModel):
+    query: str
+
+class DocOutput(BaseModel):
+    context: str

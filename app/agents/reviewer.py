@@ -1,7 +1,7 @@
 import structlog
-from app.agents.model import ReviewResult
 from app.utils.llm import get_llm
-from app.agents.state import AgentState
+from app.contracts.agent import AgentState, ReviewResult
+from app.prompts import format_prompt
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -17,24 +17,12 @@ def reviewer_node(state: AgentState) -> AgentState:
         draft_answer_length=len(state.draft_answer) if state.draft_answer else 0
     )
 
-    review_prompt = f"""
-    You are an expert AI assistant that helps reviews and improves AI generated content.
-    
-    User Question:
-    {state.user_input}
-    
-    Draft answer based on the tool output:
-    {state.draft_answer}
-
-    Selected tool:
-    {state.selected_tool}
-    
-    Based on the user question and the draft answer, decide if the draft answer is sufficient or if it needs improvement. If it needs improvement, 
-    provide an improved final answer and a short feedback; if not, just return the draft answer as the final answer with feedback that it's good.
-
-    If the selected tool is "none" or not identified, that means that the question was not technical, so simply respond in the final_answer with 
-    "No technical question or no tool selected, try again" and no feedback.
-    """
+    review_prompt = format_prompt(
+        "reviewer.txt",
+        user_input=state.user_input,
+        draft_answer=state.draft_answer,
+        selected_tool=state.selected_tool
+    )
 
     # Use structured output with Pydantic model
     llm_with_structure = llm.with_structured_output(ReviewResult)

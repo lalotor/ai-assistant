@@ -1,30 +1,20 @@
 import structlog
-from pydantic import BaseModel
+from app.contracts.tools import CodeInput, CodeOutput
+from app.prompts import format_prompt
 from app.utils.llm import get_llm
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
-
-class CodeInput(BaseModel):
-    code: str
-
-class CodeOutput(BaseModel):
-    explanation: str
 
 def code_explainer(code_input: CodeInput) -> CodeOutput:
     """Tool to explain code snippets using an LLM."""
     llm = get_llm()
 
     # Build the prompt with formatted context
-    code_explanation_prompt = f"""
-    Explain the following code clearly:
-    {code_input.code}
-
-    Guidelines:
-    - You are an expert Senior Software Engineer
-    - Explain in a clear and detailed way
-    - User MarkDown as the formatting language for the answer, and include code snippets if necessary
-    """
+    code_explanation_prompt = format_prompt(
+        "code_explainer.txt",
+        code=code_input.code
+    )
 
     logger.info(
         "code_explainer",

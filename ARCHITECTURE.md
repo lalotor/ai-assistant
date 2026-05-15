@@ -1058,6 +1058,21 @@ structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 - Custom metrics extraction from structured logs
 
 ---
+## Prompt Management
+
+### Design Pattern
+All LLM prompts are externalized to `app/prompts/` directory as `.txt` files.
+
+### Loading Mechanism
+- `load_prompt(path)` - Loads raw template
+- `format_prompt(path, **vars)` - Loads and formats with variable validation
+
+### Benefits
+- Non-technical users can modify prompts
+- Easy A/B testing and experimentation
+- Clear version control of prompt changes
+
+---
 
 ## Future Enhancements
 
