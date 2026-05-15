@@ -3,6 +3,7 @@ from app.contracts.tools import ToolDecision
 from app.contracts.agent import AgentState
 from app.utils.llm import get_llm
 from app.tools.registry import TOOLS
+from app.prompts import format_prompt
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -42,20 +43,11 @@ def get_tool_decision(question: str) -> ToolDecision:
     ])
 
     # Build the prompt for tool selection
-    tool_selection_prompt = f"""
-    You are an expert AI assistant that helps users by selecting the most appropriate tool.
-    
-    User Question:
-    {question}
-    
-    Available Tools:
-    {tool_options}
-    
-    Analyze the user's question and select the most appropriate tool.
-    Provide a brief reason for your selection.
-    
-    If no specific tool is needed, select "none" for a direct answer.
-    """
+    tool_selection_prompt = format_prompt(
+        "planner.txt",
+        question=question,
+        tool_options=tool_options
+    )
 
     logger.info(
         "get_tool_decision",

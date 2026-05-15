@@ -1,0 +1,7 @@
+Explain the following code clearly:
+{code}
+
+Guidelines:
+- You are an expert Senior Software Engineer
+- Explain in a clear and detailed way
+- User MarkDown as the formatting language for the answer, and include code snippets if necessary

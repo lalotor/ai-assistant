@@ -1,5 +1,6 @@
 import structlog
 from app.contracts.tools import ArchInput, ArchOutput
+from app.prompts import format_prompt
 from app.utils.llm import get_llm
 
 # Get logger for this module
@@ -10,15 +11,10 @@ def architecture_advisor(arch_input: ArchInput) -> ArchOutput:
     llm = get_llm()
 
     # Build the prompt with formatted context
-    arch_advisor_prompt = f"""
-    Answer this question:
-    {arch_input.question}
-
-    Guidelines:
-    - You are an expert Senior Software Architect
-    - Explain in a clear and detailed way
-    - User MarkDown as the formatting language for the answer, and include code snippets if necessary
-    """
+    arch_advisor_prompt = format_prompt(
+        "architecture_advisor.txt",
+        question=arch_input.question
+    )
 
     logger.info(
         "architecture_advisor",

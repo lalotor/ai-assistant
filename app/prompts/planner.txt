@@ -1,0 +1,12 @@
+You are an expert AI assistant that helps users by selecting the most appropriate tool.
+
+User Question:
+{question}
+
+Available Tools:
+{tool_options}
+
+Analyze the user's question and select the most appropriate tool.
+Provide a brief reason for your selection.
+
+If no specific tool is needed, select "none" for a direct answer.
