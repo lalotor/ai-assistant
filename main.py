@@ -79,7 +79,10 @@ def main():
         final_result = graph.invoke(initial_state, config)
         logger.info(
             "question_answered",
-            output=final_result,
+            user_input=final_result["user_input"],
+            plan=final_result["plan"],
+            final_answer=final_result["final_answer"],
+            review_feedback=final_result["review_feedback"]
         )
         logger.debug("question_answered_successfully")
     except Exception as e:

@@ -4,7 +4,7 @@ import os
 # Get logger for this module
 logger = structlog.get_logger(__name__)
 
-def retrieve_context(vector_store, query, k=7, score_threshold=None):
+def retrieve_context(vector_store, query, k=7, score_threshold=None) -> list[dict]:
     """Retrieves relevant context from the vector store based on a query."""
     if score_threshold is None: 
         score_threshold = float(os.getenv("SIMILARITY_THRESHOLD", "1.2"))
@@ -19,14 +19,15 @@ def retrieve_context(vector_store, query, k=7, score_threshold=None):
             source=d.metadata.get("source", "unknown"),
             file_type=d.metadata.get("file_type", "unknown"),
             content_length=len(d.page_content),
-            similarity_score=score
+            score=score
         )
         if score < score_threshold:
             filtered_docs.append({
                 "content": d.page_content,
                 "source": d.metadata.get("source", "unknown"),
                 "file_type": d.metadata.get("file_type", "unknown"),
-                "similarity_score": score
+                "score": score,
+                "search_type": "similarity"
             })
 
     return filtered_docs
