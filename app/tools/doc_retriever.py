@@ -20,10 +20,6 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
 
     results = hybrid_retrieve(doc_input.query)
     reranked_results = rerank_results(doc_input.query, results)
-    logger.debug  (
-        "reranked_results",
-        reranked_results=reranked_results
-    )
     if not reranked_results:
         logger.info(
             "no_relevant_documents_found",
@@ -35,7 +31,7 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
 
     logger.info(
         "retrieved_context_from_hybrid_search",
-        context=context
+        context=context[:500] + "..."
     )
 
     return DocOutput(context=context)
@@ -44,12 +40,22 @@ def hybrid_retrieve(query) -> list[dict]:
     """Combines vector store retrieval with keyword-based retrieval for a more comprehensive set of results."""
     vector_store = get_vector_store()
     vector_results = retrieve_context(vector_store, query, k=10)
+    logger.info(
+        "hybrid_stage_vector",
+        count=len(vector_results),
+        sources=[r['source'] for r in vector_results[:5]]
+    )
 
     docs = load_documents()
     all_chunks = get_all_chunks(docs)
     keyword_results = keyword_search(
         all_chunks,
         query
+    )
+    logger.info(
+        "hybrid_stage_keyword",
+        count=len(keyword_results),
+        sources=[r['source'] for r in keyword_results[:5]]
     )
 
     combined = []
@@ -63,6 +69,13 @@ def hybrid_retrieve(query) -> list[dict]:
         if content not in seen:
             combined.append(result)
             seen.add(content)
+
+    logger.info(
+        "hybrid_stage_merged",
+        total_count=len(combined),
+        unique_count=len(combined),
+        deduped_count=len(vector_results) + len(keyword_results) - len(combined)
+    )
 
     return combined
 
@@ -80,12 +93,17 @@ def rerank_results(query, results) -> list[dict]:
 
     response = llm.invoke(rerank_prompt)
     indexes = parse_indexes(response.content, len(results))
+    reranked_results = [results[i] for i in indexes]
+
     logger.info(
-        "parsed_indexes_from_llm_response",
-        indexes=indexes
+        "hybrid_stage_reranked",
+        input_count=len(results),
+        output_count=len(reranked_results),
+        final_sources=[r['source'] for r in reranked_results],
+        selected_indexes=indexes
     )
 
-    return [results[i] for i in indexes]
+    return reranked_results
 
 def join_results(results) -> str:
     """Formats the retrieved results into a string for LLM input."""

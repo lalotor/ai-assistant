@@ -9,7 +9,7 @@ TOOLS = {
     },
     "doc_retriever": {
         "function": doc_retriever,
-        "description": "Use when user asks about documentation, API references, or needs to look up information"
+        "description": "Use when user asks about documentation, API references, or needs to look up information for internal technical docs"
     },
     "architecture_advisor": {
         "function": architecture_advisor,
