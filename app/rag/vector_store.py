@@ -5,7 +5,7 @@ from typing import Optional
 from langchain_community.vectorstores import FAISS
 from app.rag.embeddings import get_embeddings
 from app.rag.ingestion import load_documents
-from app.rag.chunking import chunk_document
+from app.rag.chunking import get_all_chunks
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -90,15 +90,7 @@ def build_vector_store_from_documents() -> FAISS:
     logger.info("loading_documents_for_vector_store")
     docs = load_documents()
 
-    all_chunks = []
-    for doc in docs:
-        chunks = chunk_document(doc)
-        all_chunks.extend(chunks)
-        logger.debug(
-            "document_chunked",
-            source=doc.source,
-            chunk_count=len(chunks)
-        )
+    all_chunks = get_all_chunks(docs)
 
     logger.info(
         "building_vector_store",
@@ -110,7 +102,7 @@ def build_vector_store_from_documents() -> FAISS:
 
     logger.info(
         "vector_store_built_successfully",
-        total_chunks=len(all_chunks)
+        vector_store=vector_store.__class__.__name__,
     )
 
     return vector_store

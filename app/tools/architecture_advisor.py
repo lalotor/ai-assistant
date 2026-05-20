@@ -10,7 +10,6 @@ def architecture_advisor(arch_input: ArchInput) -> ArchOutput:
     """Tool to provide architecture advice based on a question."""
     llm = get_llm()
 
-    # Build the prompt with formatted context
     arch_advisor_prompt = format_prompt(
         "architecture_advisor.txt",
         question=arch_input.question

@@ -1,4 +1,3 @@
-from pathlib import Path
 import structlog
 import json
 import yaml
@@ -138,3 +137,35 @@ def chunk_generic_text_document(doc: LoadedDocument) -> list[Document]:
     docs = generic_splitter.create_documents([doc.content])
 
     return docs
+
+def get_all_chunks(docs: list[LoadedDocument]) -> list[Document]:
+    """Load all documents, chunk them, and return a combined list of all chunks."""
+    logger.info("loading_and_chunking_all_documents")
+
+    all_chunks = []
+
+    for doc in docs:
+        try:
+            chunks = chunk_document(doc)
+            all_chunks.extend(chunks)
+            logger.debug(
+                "document_chunked",
+                source=doc.source,
+                file_type=doc.type,
+                chunk_count=len(chunks)
+            )
+        except Exception as e:
+            logger.error(
+                "failed_to_chunk_document",
+                source=doc.source,
+                file_type=doc.type,
+                error=str(e)
+            )
+
+    logger.info(
+        "all_documents_chunked",
+        total_docs=len(docs),
+        total_chunks=len(all_chunks)
+    )
+
+    return all_chunks

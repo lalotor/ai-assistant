@@ -1,0 +1,11 @@
+Query:
+{query}
+
+Rank the most relevant chunks.
+
+Chunks:
+{chunks}
+
+Guidelines:
+- You are an expert context analyzer for RAG hybrid search (similarity + keyword).
+- Return only the best 3 chunk indexes joined together with a comma, without any additional text or explanation.
