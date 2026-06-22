@@ -129,7 +129,7 @@ class EnvironmentValidator:
                 error_count=len(self.validation_errors)
             )
             if self.strict_mode:
-                print(f"\n❌ {error_msg}\n", file=sys.stderr)
+                self.logger.error("env_validation_fatal", message=error_msg)
                 sys.exit(1)
         
         if self.validation_warnings:
@@ -140,7 +140,7 @@ class EnvironmentValidator:
             )
         
         if not self.validation_errors and not self.validation_warnings:
-            self.logger.info(
+            self.logger.debug(
                 "env_validation_successful",
                 validated_count=len(validated_vars)
             )
@@ -270,10 +270,11 @@ class EnvironmentValidator:
         if redact_patterns is None:
             redact_patterns = ['*_KEY', '*_SECRET', '*_TOKEN', 'PASSWORD*']
         
-        print("\n" + "="*60)
-        print("🔧 Environment Configuration Summary")
-        print("="*60)
-        
+        self.logger.debug(
+            "env_config_summary_start", 
+            header="Environment Configuration Summary"
+        )
+
         for config in self.ENV_VARS:
             value = validated_vars.get(config.name)
             
@@ -283,12 +284,21 @@ class EnvironmentValidator:
                 if value:
                     display_value = self._redact_value(value)
             
-            status = "✅" if value else "⚠️"
+            status = "set" if value else "not_set"
             source = "env" if os.getenv(config.name) else "default"
             
-            print(f"{status} {config.name:25} = {display_value or 'NOT SET':20} [{source}]")
+            self.logger.debug(
+                "env_var_status",
+                var_name=config.name,
+                value=display_value or "NOT SET",
+                status=status,
+                source=source
+            )
         
-        print("="*60 + "\n")
+        self.logger.debug(
+            "env_config_summary_end", 
+            total_vars=len(self.ENV_VARS)
+        )
 
 
 def validate_environment(strict_mode: bool = True, verbose: bool = True, redact_patterns: Optional[List[str]] = None) -> Dict[str, Any]:

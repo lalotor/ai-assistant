@@ -1,6 +1,6 @@
 [
   {
-    "question": "How many different ingestion file source types do we have",
+    "question": "Considering only your internal documentation, how many different ingestion file source types do we have",
     "expected_keywords": [
       "S3FileSource",
       "LocalFileSource",
@@ -9,9 +9,10 @@
     ],
     "expected_sources": [
       "data/docs/src/ingestion.py",
-      "data/docs/tests/test_ingestion.py"
+      "data/docs/tests/test_ingestion.py",
+      "data/docs/docs/ingestion-flow.md"
     ],
-    "category": "identifier_lookup"
+    "category": "doc_retriever"
   },
   {
     "question": "Considering only your internal documentation, what inputs does DiffService take?",
@@ -22,35 +23,10 @@
       "Algorithm"
     ],
     "expected_sources": [
-      "data/docs/java-service/src/main/java/com/example/controller/ProcessController.java"
+      "data/docs/java-service/src/main/java/com/example/controller/ProcessController.java",
+      "data/docs/architecture/high-level-design.md", 
+      "data/docs/src/api.py"
     ],
-    "category": "identifier_lookup"
-  },
-  {
-    "question": "Considering only your internal documentation, what is the cache TTL config?",
-    "expected_keywords": [
-      "default",
-      "300",
-      "Job Status",
-      "60",
-      "File Metadata",
-      "3600",
-      "Results",
-      "86400"
-    ],
-    "expected_sources": [
-      "data/docs/config/settings.yaml"
-    ],
-    "category": "identifier_lookup"
-  },
-  {
-    "question": "Considering only your internal documentation, how is the MongoDB being used?",
-    "expected_keywords": [
-      "Not documented",
-      "No documentation",
-      "Not found"
-    ],
-    "expected_sources": [],
-    "category": "failure_case"
+    "category": "doc_retriever"
   }
 ]

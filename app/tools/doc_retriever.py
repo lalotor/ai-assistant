@@ -19,7 +19,7 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
     )
 
     results = hybrid_retrieve(doc_input.query)
-    reranked_results = rerank_results(doc_input.query, results)
+    reranked_results, sources = rerank_results(doc_input.query, results)
     if not reranked_results:
         logger.info(
             "no_relevant_documents_found",
@@ -31,10 +31,11 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
 
     logger.info(
         "retrieved_context_from_hybrid_search",
-        context=context[:500] + "..."
+        context=context[:500] + "...",
+        sources=sources
     )
 
-    return DocOutput(context=context)
+    return DocOutput(context=context, sources=sources)
 
 def hybrid_retrieve(query) -> list[dict]:
     """Combines vector store retrieval with keyword-based retrieval for a more comprehensive set of results."""
@@ -79,7 +80,7 @@ def hybrid_retrieve(query) -> list[dict]:
 
     return combined
 
-def rerank_results(query, results) -> list[dict]:
+def rerank_results(query, results) -> tuple[list[dict], list[str]]:
     """Uses the LLM to rerank retrieved results based on relevance to the query."""
     llm = get_llm()
 
@@ -94,16 +95,17 @@ def rerank_results(query, results) -> list[dict]:
     response = llm.invoke(rerank_prompt)
     indexes = parse_indexes(response.content, len(results))
     reranked_results = [results[i] for i in indexes]
+    final_sources = list(set(r['source'] for r in reranked_results))
 
     logger.info(
         "hybrid_stage_reranked",
         input_count=len(results),
         output_count=len(reranked_results),
-        final_sources=[r['source'] for r in reranked_results],
+        final_sources=final_sources,
         selected_indexes=indexes
     )
 
-    return reranked_results
+    return reranked_results, final_sources
 
 def join_results(results) -> str:
     """Formats the retrieved results into a string for LLM input."""

@@ -9,15 +9,30 @@ import os
 import subprocess
 import sys
 from typing import Any
-
 import structlog
+from dotenv import load_dotenv
+
+# Load environment variables FIRST before any validation
+# This ensures .env file values (like OPENAI_API_KEY) are available
+load_dotenv()
+
+from app.config.logging_config import configure_logging
+from app.config.env_validator import validate_environment
+
+validated_env = validate_environment(verbose=True)
+
+configure_logging(
+    log_level=validated_env.get("LOG_LEVEL", "INFO"),
+    json_logs=validated_env.get("JSON_LOGS", "false").lower() == "true",
+    enable_file_logging=validated_env.get("ENABLE_FILE_LOGGING", "false").lower() == "true",
+    log_file_path=validated_env.get("LOG_FILE_PATH", "logs/app.log")
+)
 
 logger = structlog.get_logger(__name__)
 
 # Project root (one level up from evaluation/)
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAIN_SCRIPT = os.path.join(ROOT_DIR, "main.py")
-
 
 def ask_assistant(question: str) -> dict[str, Any]:
     """Send a question to the AI assistant via the CLI and return the JSON result.
@@ -76,22 +91,34 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
 
-    print(f"\n{'='*60}")
-    print(f"🧪 Running evaluation  —  {len(eval_set)} question(s)")
-    print(f"{'='*60}\n")
-
+    logger.info(
+        "run_evaluation_started",
+        questions=len(eval_set)
+    )
+    
     for idx, item in enumerate(eval_set, start=1):
         question = item["question"]
-        print(f"[{idx}/{len(eval_set)}] Q: {question[:70]}...")
+        logger.info(
+            "evaluating_question",
+            progression=f"[{idx}/{len(eval_set)}]",
+            Q=question[:100]
+        )
 
         try:
             response = ask_assistant(question)
             answer = response["final_answer"].lower()
+            retrieved_sources = response["retrieved_sources"]
 
             # Keyword matching
             expected = item.get("expected_keywords", [])
             hits = [kw for kw in expected if kw.lower() in answer]
             score = len(hits) / len(expected) if expected else 1.0
+
+            # Files matching
+            expected_sources = item.get("expected_sources", [])
+            retrieved_set = {s.lower() for s in retrieved_sources}
+            hits_sources = [src for src in expected_sources if src.lower() in retrieved_set]
+            score_sources = len(hits_sources) / len(expected_sources) if expected_sources else 1.0
 
             result = {
                 "question": question,
@@ -99,10 +126,17 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                 "plan": response.get("plan"),
                 "expected_keywords": expected,
                 "matched_keywords": hits,
+                "expected_sources": expected_sources,
+                "matched_sources": hits_sources,
                 "score": score,
+                "score_sources": score_sources,
                 "status": "pass" if score >= 0.5 else "fail",
             }
-            print(f"   Keywords: {len(hits)}/{len(expected)} matched  (score: {score:.0%})")
+            logger.info(
+                "evaluation_result",
+                Score=f"{len(hits)}/{len(expected)} matched (score: {score:.0%})",
+                Score_sources=f"{len(hits_sources)}/{len(expected_sources)} matched (score: {score_sources:.0%})"
+            )
 
         except Exception as exc:
             result = {
@@ -110,12 +144,22 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                 "answer": None,
                 "error": str(exc),
                 "score": 0.0,
+                "score_sources": 0.0,
                 "status": "error",
             }
-            print(f"   ❌ Error: {exc}")
+            logger.error(
+                "evaluation_error",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                exc_info=True
+            )
 
         results.append(result)
-        print()
+
+    logger.debug(
+        "evaluation_results",
+        results=results
+    )
 
     # Summary
     total = len(results)
@@ -123,10 +167,17 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
     failed = sum(1 for r in results if r["status"] == "fail")
     errors = sum(1 for r in results if r["status"] == "error")
     avg_score = sum(r["score"] for r in results) / total if total else 0.0
+    avg_score_sources = sum(r["score_sources"] for r in results) / total if total else 0.0
 
-    print("="*60)
-    print(f"📊 Results: {passed} passed, {failed} failed, {errors} errors  —  avg score: {avg_score:.0%}")
-    print("="*60 + "\n")
+    logger.info(
+        "evaluation_summary",
+        total=total,
+        passed=passed,
+        failed=failed,
+        errors=errors,
+        avg_score=f"{avg_score:.0%}",
+        avg_score_sources=f"{avg_score_sources:.0%}"
+    )
 
     return results
 

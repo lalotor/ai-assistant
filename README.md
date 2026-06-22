@@ -23,12 +23,12 @@ python main.py
 
 ## Non-nteractive mode, default output
 ```bash
-python main.py --question "How many ingestion file source types do we have?"
+python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?"
 ```
 
 ## Non-nteractive mode, JSON output
 ```bash
-python main.py --question "How many ingestion file source types do we have?"  --json
+python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?"  --json
 ```
 
 ## Run the evaluation suite

@@ -28,7 +28,6 @@ configure_logging(
 
 logger = structlog.get_logger(__name__)
 
-
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="AI Assistant - Multi-Agent")
@@ -82,7 +81,8 @@ def run_question(question: str, *, output_json: bool = False) -> dict:
             user_input=final_result["user_input"],
             plan=final_result["plan"],
             final_answer=final_result["final_answer"],
-            review_feedback=final_result["review_feedback"]
+            review_feedback=final_result["review_feedback"],
+            retrieved_sources=final_result["retrieved_sources"] if "retrieved_sources" in final_result else None
         )
         logger.debug("question_answered_successfully")
     except Exception as e:
@@ -99,7 +99,8 @@ def run_question(question: str, *, output_json: bool = False) -> dict:
             "user_input": final_result["user_input"],
             "plan": final_result["plan"],
             "final_answer": final_result["final_answer"],
-            "review_feedback": final_result["review_feedback"]
+            "review_feedback": final_result["review_feedback"],
+            "retrieved_sources": final_result["retrieved_sources"] if "retrieved_sources" in final_result else None
         }
         print(json.dumps(output))
 
@@ -128,14 +129,11 @@ def main():
     if args.question:
         user_question = args.question
     else:
-        print("\n" + "="*60)
-        print("🤖 AI Assistant - Multi-Agent")
-        print("="*60)
+        logger.info("ai_assistant_banner", banner="🤖 AI Assistant - Multi-Agent")
         user_question = input("\n💬 Enter your technical question: ").strip()
 
     if not user_question:
-        logger.warning("empty_input_provided")
-        print("\n⚠️  No question provided. Exiting...")
+        logger.warning("empty_input_provided", message="No question provided. Exiting.")
         return
 
     run_question(user_question, output_json=args.json)
