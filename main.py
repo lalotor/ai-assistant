@@ -98,9 +98,13 @@ def run_question(question: str, *, output_json: bool = False) -> dict:
         output = {
             "user_input": final_result["user_input"],
             "plan": final_result["plan"],
+            "selected_tool": final_result.get("selected_tool"),
+            "tool_input": final_result.get("tool_input"),
+            "tool_output": final_result.get("tool_output"),
+            "draft_answer": final_result.get("draft_answer"),
             "final_answer": final_result["final_answer"],
             "review_feedback": final_result["review_feedback"],
-            "retrieved_sources": final_result["retrieved_sources"] if "retrieved_sources" in final_result else None
+            "retrieved_sources": final_result.get("retrieved_sources"),
         }
         print(json.dumps(output))
 
