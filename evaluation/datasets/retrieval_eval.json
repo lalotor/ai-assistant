@@ -1,0 +1,155 @@
+[
+  {
+    "question": "How many different ingestion file source types do we have",
+    "expected_keywords": [
+      "S3FileSource",
+      "LocalFileSource",
+      "HTTPFileSource",
+      "FileSource"
+    ],
+    "expected_sources": [
+      "data/docs/src/ingestion.py",
+      "data/docs/tests/test_ingestion.py",
+      "data/docs/docs/ingestion-flow.md"
+    ],
+    "category": "doc_retriever"
+  },
+  {
+    "question": "Considering only your internal documentation, what inputs does DiffService take?",
+    "expected_keywords": [
+      "JodID",
+      "SystemAData",
+      "SystemBData",
+      "Algorithm"
+    ],
+    "expected_sources": [
+      "data/docs/java-service/src/main/java/com/example/controller/ProcessController.java",
+      "data/docs/architecture/high-level-design.md",
+      "data/docs/src/api.py"
+    ],
+    "category": "doc_retriever"
+  },
+  {
+    "question": "Considering only your internal documentation, what is the cache TTL config?",
+    "expected_keywords": [
+      "default",
+      "300",
+      "Job Status",
+      "60",
+      "File Metadata",
+      "3600",
+      "Results",
+      "86400"
+    ],
+    "expected_sources": [
+      "data/docs/config/settings.yaml",
+      "data/docs/architecture/data-model.md",
+      "data/docs/ARCHITECTURE.md"
+    ],
+    "category": "doc_retriever"
+  },
+  {
+    "question": "Considering only your internal documentation, how is the MongoDB being used?",
+    "expected_keywords": [
+      "No documentation",
+      "No information",
+      "No description",
+      "No reference"
+    ],
+    "expected_sources": [],
+    "category": "failure"
+  },
+  {
+    "question": "Considering only your internal documentation, what are the four specialized queue types used in the async processing architecture?",
+    "expected_keywords": [
+      "ingestion",
+      "processing",
+      "comparison",
+      "notification",
+      "queue"
+    ],
+    "expected_sources": [
+      "data/docs/docs/async-processing.md",
+      "data/docs/ARCHITECTURE.md",
+      "data/docs/docs/ingestion-flow.md"
+    ],
+    "category": "doc_retriever"
+  },
+  {
+    "question": "Considering only your internal documentation, what are the normalization stages applied before comparison in the comparison engine?",
+    "expected_keywords": [
+      "whitespace",
+      "numeric",
+      "string",
+      "structural"
+    ],
+    "expected_sources": [
+      "data/docs/docs/comparison-engine.md",
+      "data/docs/DECISIONS.md",
+      "data/docs/README.md"
+    ],
+    "category": "doc_retriever"
+  },
+  {
+    "question": "How does PaymentRetryService handle failed retries?",
+    "expected_keywords": [
+      "retry",
+      "max_retries",
+      "backoff",
+      "failure"
+    ],
+    "expected_sources": [
+      "data/docs/src/api.py",
+      "data/docs/docs/async-processing.md"
+    ],
+    "category": "doc_retriever"
+  },
+  {
+    "question": "What are the pros and cons of using a queue-based asynchronous architecture versus synchronous REST for long-running file processing operations?",
+    "expected_keywords": [
+      "scalability",
+      "decoupling",
+      "retry",
+      "timeout",
+      "resilience"
+    ],
+    "expected_sources": [],
+    "category": "architecture_advisor"
+  },
+  {
+    "question": "From a software architecture perspective, what are the benefits and trade-offs of using a polyglot architecture with Python for orchestration and Java for compute-intensive tasks?",
+    "expected_keywords": [
+      "performance",
+      "complexity",
+      "ecosystem",
+      "deployment",
+      "integration"
+    ],
+    "expected_sources": [],
+    "category": "architecture_advisor"
+  },
+  {
+    "question": "Explain this code: class ProcessingPipeline:\n    def __init__(self, job_id):\n        self.job_id = job_id\n        self.stages = []\n    def add_stage(self, name, handler):\n        self.stages.append({'name': name, 'handler': handler})\n    def execute(self, context):\n        result = context\n        for idx, stage in enumerate(self.stages):\n            result = stage['handler'](result)\n        return result",
+    "expected_keywords": [
+      "pipeline",
+      "stage",
+      "handler",
+      "pattern",
+      "sequential"
+    ],
+    "expected_sources": [],
+    "category": "code_explainer"
+  },
+  {
+    "question": "Explain this code: def calculate_diff(source, target, path=''):\n    differences = []\n    if isinstance(source, dict):\n        all_keys = set(source.keys()) | set(target.keys())\n        for key in all_keys:\n            differences.extend(calculate_diff(source.get(key), target.get(key), f'{path}.{key}'))\n    elif source != target:\n        differences.append({'path': path, 'type': 'modified', 'old': source, 'new': target})\n    return differences",
+    "expected_keywords": [
+      "recursive",
+      "diff",
+      "comparison",
+      "dictionary",
+      "path"
+    ],
+    "expected_sources": [],
+    "category": "code_explainer"
+  }
+]

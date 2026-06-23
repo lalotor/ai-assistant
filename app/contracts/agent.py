@@ -16,6 +16,8 @@ class AgentState(BaseModel):
 
     review_feedback: Optional[str] = None
 
+    retrieved_sources: Optional[list[str]] = None
+
 class ReviewResult(BaseModel):
     """Structured output model for LLM review results."""
 

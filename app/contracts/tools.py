@@ -74,3 +74,4 @@ class DocInput(BaseModel):
 
 class DocOutput(BaseModel):
     context: str
+    sources: list[str]

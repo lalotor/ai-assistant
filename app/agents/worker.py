@@ -23,6 +23,7 @@ def worker_node(state: AgentState) -> AgentState:
     # Route to the appropriate tool based on selection
     tool_result = None
     tool_input = state.tool_input or {}  # Safely handle None
+    retrieved_sources = None
 
     try:
         if state.selected_tool == "code_explainer":
@@ -33,6 +34,7 @@ def worker_node(state: AgentState) -> AgentState:
             query = tool_input.get("query") or state.user_input
             result = TOOLS["doc_retriever"]["function"](DocInput(query=query))
             tool_result = result.context
+            retrieved_sources = result.sources
         elif state.selected_tool == "architecture_advisor":
             question = tool_input.get("question") or state.user_input
             result = TOOLS["architecture_advisor"]["function"](ArchInput(question=question))
@@ -54,6 +56,7 @@ def worker_node(state: AgentState) -> AgentState:
 
     state.tool_output = str(tool_result)
     state.draft_answer = f"Tool result:\n{state.tool_output}"
+    state.retrieved_sources = retrieved_sources
 
     logger.debug(
         "tool_execution_completed",
