@@ -1,4 +1,5 @@
 import structlog
+from datetime import datetime
 from app.contracts.tools import ToolDecision
 from app.contracts.agent import AgentState
 from app.utils.llm import get_llm
@@ -18,6 +19,8 @@ def planner_node(state: AgentState) -> AgentState:
         input=state.user_input
     )
 
+    started = datetime.now()
+
     # Use LLM with structured output to decide which tool to use
     tool_decision = get_tool_decision(state.user_input)
 
@@ -30,6 +33,13 @@ def planner_node(state: AgentState) -> AgentState:
     state.plan = tool_decision.reason
     state.selected_tool = tool_decision.tool
     state.tool_input = tool_decision.tool_input
+
+    if state.stage_timings is None:
+        state.stage_timings = {}
+    state.stage_timings["planner"] = {
+        "started_at": started,
+        "ended_at": datetime.now()
+    }
 
     return state
 

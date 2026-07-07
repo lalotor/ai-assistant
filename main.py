@@ -4,6 +4,8 @@ import uuid
 import structlog
 from dotenv import load_dotenv
 
+from app.tracing import build_execution_trace
+
 # Load environment variables FIRST before any other imports
 # This ensures all modules can access environment variables when imported
 load_dotenv()
@@ -46,17 +48,18 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_question(question: str, *, output_json: bool = False) -> dict:
+def run_question(question: str, output_json: bool = False, trace_id: str = None) -> dict:
     """Run a single question through the AI assistant graph.
 
     Args:
         question: The user question to process.
         output_json: If True, print the result as JSON to stdout.
+        trace_id: The ID for tracing this execution.
 
     Returns:
         The final graph state as a dictionary.
     """
-    initial_state = AgentState(user_input=question)
+    initial_state = AgentState(user_input=question, trace_id=trace_id)
 
     logger.info(
         "initial_state_created",
@@ -85,6 +88,12 @@ def run_question(question: str, *, output_json: bool = False) -> dict:
             retrieved_sources=final_result["retrieved_sources"] if "retrieved_sources" in final_result else None
         )
         logger.debug("question_answered_successfully")
+
+        trace = build_execution_trace(final_result)
+        logger.info(
+            "execution_trace_built",
+            trace_id=trace.trace_id
+        )
     except Exception as e:
         logger.error(
             "workflow_resume_failed",
@@ -105,6 +114,7 @@ def run_question(question: str, *, output_json: bool = False) -> dict:
             "final_answer": final_result["final_answer"],
             "review_feedback": final_result["review_feedback"],
             "retrieved_sources": final_result.get("retrieved_sources"),
+            "execution_trace": trace.to_dict()
         }
         print(json.dumps(output))
 
@@ -140,7 +150,7 @@ def main():
         logger.warning("empty_input_provided", message="No question provided. Exiting.")
         return
 
-    run_question(user_question, output_json=args.json)
+    run_question(user_question, output_json=args.json, trace_id=correlation_id)
 
     if not args.json:
         save_graph_image(get_graph())

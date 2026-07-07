@@ -12,8 +12,9 @@
 8. [Configuration Management](#configuration-management)
 9. [Logging and Observability](#logging-and-observability)
 10. [RAG Pipeline](#rag-pipeline)
-11. [Deployment Considerations](#deployment-considerations)
-12. [Future Enhancements](#future-enhancements)
+11. [Evaluation Framework](#evaluation-framework)
+12. [Deployment Considerations](#deployment-considerations)
+13. [Future Enhancements](#future-enhancements)
 
 ---
 
@@ -142,19 +143,47 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
 - Initialize vector store
 - Create agent state and invoke LangGraph workflow
 - Generate graph visualization
+- **Dual-mode operation**: Interactive CLI and programmatic JSON output
 
 **Key Functions:**
-- `main()`: Orchestrates the entire workflow
+- `main()`: Orchestrates the entire workflow (interactive or CLI-driven)
+- `run_question(question, output_json)`: Executes a single question through the graph
+- `parse_args()`: Handles CLI arguments (`--question`/`-q`, `--json`)
 - `save_graph_image()`: Generates Mermaid PNG visualization
+
+**CLI Modes:**
+
+| Mode | Command | Use Case |
+|------|---------|----------|
+| Interactive | `python main.py` | User types question at prompt |
+| Single Question | `python main.py -q "question"` | One-shot CLI execution |
+| JSON Output | `python main.py -q "question" --json` | Programmatic/evaluation use |
+
+**JSON Output Format** (used by evaluation runner):
+```json
+{
+  "user_input": "...",
+  "plan": "...",
+  "selected_tool": "doc_retriever",
+  "tool_input": {"query": "..."},
+  "tool_output": "...",
+  "draft_answer": "...",
+  "final_answer": "...",
+  "review_feedback": "...",
+  "retrieved_sources": ["data/docs/..."]
+}
+```
 
 **Initialization Sequence:**
 ```python
-1. load_dotenv()                    # Load .env file
-2. validate_environment()            # Validate required env vars
-3. configure_logging()               # Setup structlog
-4. initialize_vector_store()         # Load/build FAISS index
-5. get_graph()                       # Compile LangGraph workflow
-6. graph.invoke(initial_state)       # Execute workflow
+1. parse_args()                      # Parse CLI flags
+2. load_dotenv()                     # Load .env file
+3. validate_environment()            # Validate required env vars
+4. configure_logging()               # Setup structlog
+5. initialize_vector_store()         # Load/build FAISS index
+6. get_graph()                       # Compile LangGraph workflow
+7. graph.invoke(initial_state)       # Execute workflow
+8. json.dumps(output)                # (if --json) Print structured output
 ```
 
 ---
@@ -814,6 +843,14 @@ ai-assistant/
 │       ├── index.faiss
 │       └── index.pkl
 │
+├── evaluation/                  # Evaluation framework
+│   ├── runner.py               # CLI-based evaluation runner
+│   ├── datasets/
+│   │   ├── retrieval_eval.json # Active evaluation dataset (10 questions)
+│   │   └── retrieval_eval.bu.json  # Backup of original dataset
+│   └── results/
+│       └── eval_YYYY-MM-DD_HH-MM-SS.json  # Timestamped result files
+│
 └── tests/                       # Test suite
 ```
 
@@ -1058,6 +1095,156 @@ structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 - Custom metrics extraction from structured logs
 
 ---
+
+## Evaluation Framework
+
+### Purpose
+
+Automated evaluation system for assessing the AI assistant's response quality, retrieval accuracy, and failure classification. The framework runs evaluation datasets against the assistant via its CLI interface and produces timestamped result reports.
+
+### Architecture Decision
+
+The evaluation runner uses a **CLI subprocess approach** rather than importing the application graph directly. This avoids duplicating initialization logic (env validation, vector store setup, logging configuration) that lives in `main.py`.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                  Evaluation Runner                       │
+│                 (evaluation/runner.py)                   │
+│                                                          │
+│  ┌──────────────┐    ┌───────────────┐    ┌────────────┐ │
+│  │ Load Dataset │───▶│ For each Q:   │───▶│  Aggregate │ │
+│  │ (JSON file)  │    │ ask_assistant │    │  & Score   │ │
+│  └──────────────┘    └──────┬────────┘    └─────┬──────┘ │
+│                            │                  │          │
+│                            ▼                  ▼          │
+│                    ┌──────────────┐   ┌──────────────┐   │
+│                    │  subprocess  │   │ Save results │   │
+│                    │  python      │   │ (JSON file)  │   │
+│                    │  main.py     │   └──────────────┘   │
+│                    │  --json      │                      │
+│                    └──────────────┘                      │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Evaluation Dataset
+
+**Location**: `evaluation/datasets/retrieval_eval.json`
+
+**Structure per question:**
+```json
+{
+  "question": "User question to evaluate",
+  "expected_keywords": ["keyword1", "keyword2"],
+  "expected_sources": ["data/docs/path/to/file.md"],
+  "category": "doc_retriever"
+}
+```
+
+**Current Coverage** (10 questions across 4 categories):
+
+| Category | Count | Description |
+|----------|-------|-------------|
+| `doc_retriever` | 6 | Questions targeting RAG retrieval from `/data/docs/` |
+| `architecture_advisor` | 2 | Architecture/design reasoning questions |
+| `code_explainer` | 2 | Code snippet explanation questions |
+| `failure` | 1 | Anti-hallucination test (asks about non-existent topic) |
+
+**Evaluation Scenarios:**
+- **Exact lookup**: Specific facts from documentation (e.g., cache TTL values)
+- **Semantic architecture**: Conceptual questions requiring synthesis across docs
+- **Mixed query**: Questions spanning multiple source files
+- **Unknown info / anti-hallucination**: Questions about topics not in the corpus
+
+### Scoring System
+
+**Keyword Score**: Measures answer quality by checking expected keywords in the final answer.
+```python
+score = matched_keywords / total_expected_keywords
+```
+
+**Source Score**: Measures retrieval accuracy by comparing retrieved sources against expected sources.
+```python
+score_sources = matched_sources / total_expected_sources
+```
+
+**Pass/Fail Threshold**: `score >= 0.5` = pass
+
+### Failure Classification
+
+The `classify_failure()` function categorizes failures into 6 types for root cause analysis:
+
+| Failure Type | Detection Logic |
+|---|---|
+| `tool_failure` | Tool output contains error messages |
+| `planner_failure` | Selected tool doesn't match expected category |
+| `missing_context` | Expected source documents don't exist in corpus |
+| `retrieval_failure` | Expected docs exist but weren't retrieved (source score < 0.5) |
+| `hallucination` | Sources retrieved correctly but answer doesn't use them (score < 0.3) |
+| `weak_reasoning` | Catch-all for remaining failures |
+
+### Execution Traces
+
+The runner captures full execution traces from the `--json` output for each question:
+
+| Trace Field | Source | Purpose |
+|---|---|---|
+| `selected_tool` | Planner agent | Verify correct tool routing |
+| `tool_input` | Planner agent | Inspect what was passed to the tool |
+| `tool_output` | Worker agent | Raw tool execution result |
+| `draft_answer` | Worker agent | Pre-review answer |
+| `review_feedback` | Reviewer agent | Quality assessment |
+| `retrieved_sources` | doc_retriever tool | Files used for RAG context |
+
+### Result Persistence
+
+Results are saved as timestamped JSON files in `evaluation/results/`:
+
+```json
+{
+  "summary": {
+    "timestamp": "2026-06-22_19-42-22",
+    "total": 10,
+    "passed": 6,
+    "failed": 3,
+    "errors": 1,
+    "avg_score": 0.58,
+    "avg_score_sources": 0.45
+  },
+  "results": [
+    {
+      "question": "...",
+      "answer": "...",
+      "plan": "...",
+      "selected_tool": "doc_retriever",
+      "tool_input": {"query": "..."},
+      "tool_output": "...",
+      "draft_answer": "...",
+      "review_feedback": "...",
+      "retrieved_sources": ["data/docs/..."],
+      "expected_keywords": ["..."],
+      "matched_keywords": ["..."],
+      "expected_sources": ["..."],
+      "matched_sources": ["..."],
+      "score": 0.75,
+      "score_sources": 0.67,
+      "status": "pass",
+      "failure_type": null
+    }
+  ]
+}
+```
+
+### Running Evaluations
+
+```bash
+# Run the full evaluation suite
+python -m evaluation.runner
+
+# Results saved to evaluation/results/eval_<timestamp>.json
+```
+
+---
+
 ## Prompt Management
 
 ### Design Pattern
@@ -1109,10 +1296,13 @@ All LLM prompts are externalized to `app/prompts/` directory as `.txt` files.
    - Add tool chaining (multiple tools per query)
    - Support parallel tool execution
 
-3. **Evaluation Framework**
-   - Add automated testing for agent responses
-   - Implement RAG evaluation metrics (precision, recall)
+3. **Evaluation Framework Enhancements** *(foundation implemented in Week 6)*
+   - ~~Add automated testing for agent responses~~ ✅ Done
+   - ~~Implement RAG evaluation metrics (precision, recall)~~ ✅ Partial (keyword + source scoring)
+   - Implement LLM-as-judge grading for answer quality
+   - Add baseline comparison between evaluation runs
    - A/B testing for prompt variations
+   - Expand evaluation dataset beyond 10 questions
 
 4. **UI/API Layer**
    - Build REST API (FastAPI)
@@ -1159,6 +1349,13 @@ The system is production-ready for single-user scenarios and can be extended to 
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: 2026-05-08  
+**Document Version**: 1.1  
+**Last Updated**: 2026-06-23  
 **Author**: AI Assistant Architecture Analysis
+
+### Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.1 | 2026-06-23 | Week 6: Added Evaluation Framework section, updated Entry Point for dual-mode CLI, updated project structure with evaluation/ directory, marked evaluation milestones in Future Enhancements |
+| 1.0 | 2026-05-08 | Initial architecture documentation |
