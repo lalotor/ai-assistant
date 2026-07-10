@@ -1,10 +1,13 @@
 import structlog
+from datetime import datetime
 from app.contracts.tools import DocInput, DocOutput
+from app.contracts.trace import RetrievalTrace
 from app.rag.keyword_retriever import keyword_search
 from app.rag.retriever import retrieve_context
 from app.rag.vector_store import get_vector_store
 from app.rag.ingestion import load_documents
 from app.rag.chunking import get_all_chunks
+from app.utils.util import calculate_duration_ms
 from app.utils.llm import get_llm
 from app.prompts import format_prompt
 
@@ -18,8 +21,13 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
         query=doc_input.query
     )
 
-    results = hybrid_retrieve(doc_input.query)
-    reranked_results, sources = rerank_results(doc_input.query, results)
+    started = datetime.now()
+    retrieval_trace = RetrievalTrace(
+        query=doc_input.query
+    )
+
+    results = hybrid_retrieve(doc_input.query, retrieval_trace)
+    reranked_results, sources = rerank_results(doc_input.query, results, retrieval_trace)
     if not reranked_results:
         logger.info(
             "no_relevant_documents_found",
@@ -28,6 +36,8 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
         return DocOutput(context="No relevant documentation found for this query. The question may be outside the scope of available technical documentation.")
 
     context = join_results(reranked_results)
+    ended = datetime.now()
+    retrieval_trace.duration_ms = calculate_duration_ms(started, ended)
 
     logger.info(
         "retrieved_context_from_hybrid_search",
@@ -35,9 +45,9 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
         sources=sources
     )
 
-    return DocOutput(context=context, sources=sources)
+    return DocOutput(context=context, sources=sources, retrieval_trace=retrieval_trace)
 
-def hybrid_retrieve(query) -> list[dict]:
+def hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
     """Combines vector store retrieval with keyword-based retrieval for a more comprehensive set of results."""
     vector_store = get_vector_store()
     vector_results = retrieve_context(vector_store, query, k=10)
@@ -46,6 +56,8 @@ def hybrid_retrieve(query) -> list[dict]:
         count=len(vector_results),
         sources=[r['source'] for r in vector_results[:5]]
     )
+
+    retrieval_trace.vector_results_count = len(vector_results)
 
     docs = load_documents()
     all_chunks = get_all_chunks(docs)
@@ -58,6 +70,8 @@ def hybrid_retrieve(query) -> list[dict]:
         count=len(keyword_results),
         sources=[r['source'] for r in keyword_results[:5]]
     )
+
+    retrieval_trace.keyword_results_count = len(keyword_results)
 
     combined = []
     seen = set()
@@ -78,9 +92,11 @@ def hybrid_retrieve(query) -> list[dict]:
         deduped_count=len(vector_results) + len(keyword_results) - len(combined)
     )
 
+    retrieval_trace.merged_count = len(combined)
+
     return combined
 
-def rerank_results(query, results) -> tuple[list[dict], list[str]]:
+def rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalTrace) -> tuple[list[dict], list[str]]:
     """Uses the LLM to rerank retrieved results based on relevance to the query."""
     llm = get_llm()
 
@@ -104,6 +120,9 @@ def rerank_results(query, results) -> tuple[list[dict], list[str]]:
         final_sources=final_sources,
         selected_indexes=indexes
     )
+
+    retrieval_trace.reranked_count = len(reranked_results)
+    retrieval_trace.final_sources = final_sources
 
     return reranked_results, final_sources
 

@@ -1,6 +1,8 @@
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
+from app.contracts.trace import RetrievalTrace
+
 class AgentState(BaseModel):
     """Model representing the state of the agent during a conversation."""
     user_input: str
@@ -17,6 +19,10 @@ class AgentState(BaseModel):
     review_feedback: Optional[str] = None
 
     retrieved_sources: Optional[list[str]] = None
+
+    stage_timings: Optional[Dict[str, Any]] = None
+    trace_id: str
+    retrieval_trace: Optional[RetrievalTrace] = None
 
 class ReviewResult(BaseModel):
     """Structured output model for LLM review results."""

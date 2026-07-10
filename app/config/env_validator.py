@@ -84,6 +84,18 @@ class EnvironmentValidator:
             default="1.2",
             description="Similarity threshold for vector store retrieval (L2 distance)"
         ),
+        EnvVarConfig(
+            name="SLOW_EXECUTION_THRESHOLD",
+            required=False,
+            default="10000",
+            description="Threshold in milliseconds for slow execution detection"
+        ),
+        EnvVarConfig(
+            name="QUESTION_TIMEOUT",
+            required=False,
+            default="60",
+            description="Timeout in seconds for processing a question"
+        ),
     ]
     
     def __init__(self, strict_mode: bool = True):

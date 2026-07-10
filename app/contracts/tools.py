@@ -1,6 +1,7 @@
 from typing import Literal, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 
+from app.contracts.trace import RetrievalTrace
 
 class ToolDecision(BaseModel):
     """Structured output model for LLM tool selection decision."""
@@ -75,3 +76,4 @@ class DocInput(BaseModel):
 class DocOutput(BaseModel):
     context: str
     sources: list[str]
+    retrieval_trace: RetrievalTrace

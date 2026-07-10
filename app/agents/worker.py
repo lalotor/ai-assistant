@@ -1,3 +1,4 @@
+from datetime import datetime
 import structlog
 from app.utils.llm import get_llm
 from app.tools.registry import TOOLS
@@ -20,10 +21,13 @@ def worker_node(state: AgentState) -> AgentState:
         tool_input=state.tool_input
     )
 
+    started = datetime.now()
+
     # Route to the appropriate tool based on selection
     tool_result = None
     tool_input = state.tool_input or {}  # Safely handle None
     retrieved_sources = None
+    retrieval_trace = None
 
     try:
         if state.selected_tool == "code_explainer":
@@ -35,6 +39,7 @@ def worker_node(state: AgentState) -> AgentState:
             result = TOOLS["doc_retriever"]["function"](DocInput(query=query))
             tool_result = result.context
             retrieved_sources = result.sources
+            retrieval_trace = result.retrieval_trace
         elif state.selected_tool == "architecture_advisor":
             question = tool_input.get("question") or state.user_input
             result = TOOLS["architecture_advisor"]["function"](ArchInput(question=question))
@@ -57,6 +62,13 @@ def worker_node(state: AgentState) -> AgentState:
     state.tool_output = str(tool_result)
     state.draft_answer = f"Tool result:\n{state.tool_output}"
     state.retrieved_sources = retrieved_sources
+    state.retrieval_trace = retrieval_trace
+    if state.stage_timings is None:
+        state.stage_timings = {}
+    state.stage_timings["worker"] = {
+        "started_at": started,
+        "ended_at": datetime.now()
+    }
 
     logger.debug(
         "tool_execution_completed",

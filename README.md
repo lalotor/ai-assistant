@@ -21,12 +21,12 @@
 python main.py
 ```
 
-## Non-nteractive mode, default output
+## Non-interactive mode, default output
 ```bash
 python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?"
 ```
 
-## Non-nteractive mode, JSON output
+## Non-interactive mode, JSON output
 ```bash
 python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?"  --json
 ```
