@@ -4,6 +4,7 @@ import uuid
 import structlog
 from dotenv import load_dotenv
 
+from app.contracts.response import QueryResponse
 from app.tracing import build_execution_trace
 
 # Load environment variables FIRST before any other imports
@@ -104,19 +105,19 @@ def run_question(question: str, output_json: bool = False, trace_id: str = None)
         raise
 
     if output_json:
-        output = {
-            "user_input": final_result["user_input"],
-            "plan": final_result["plan"],
-            "selected_tool": final_result.get("selected_tool"),
-            "tool_input": final_result.get("tool_input"),
-            "tool_output": final_result.get("tool_output"),
-            "draft_answer": final_result.get("draft_answer"),
-            "final_answer": final_result["final_answer"],
-            "review_feedback": final_result["review_feedback"],
-            "retrieved_sources": final_result.get("retrieved_sources"),
-            "execution_trace": trace.to_dict()
-        }
-        print(json.dumps(output))
+        response = QueryResponse(
+            user_input=final_result["user_input"],
+            plan=final_result["plan"],
+            selected_tool=final_result.get("selected_tool"),
+            tool_input=final_result.get("tool_input"),
+            tool_output=final_result.get("tool_output"),
+            draft_answer=final_result.get("draft_answer"),
+            final_answer=final_result["final_answer"],
+            review_feedback=final_result["review_feedback"],
+            retrieved_sources=final_result.get("retrieved_sources"),
+            execution_trace=trace
+        )
+        print(json.dumps(response.to_dict()))
 
     return final_result
 

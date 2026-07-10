@@ -3,6 +3,11 @@
 Invokes the AI assistant via its CLI interface (`python main.py --question ... --json`)
 so that all initialisation logic (env validation, vector store, logging) is handled
 by main.py and never duplicated here.
+
+Results are saved progressively after each question is evaluated, so partial
+results are preserved even if the runner is interrupted or a later question fails.
+A configurable per-question timeout prevents any single question from blocking
+the entire evaluation run.
 """
 from datetime import datetime
 import json
@@ -12,6 +17,8 @@ import sys
 from typing import Any
 import structlog
 from dotenv import load_dotenv
+
+from app.contracts.response import QueryResponse
 
 # Load environment variables FIRST before any validation
 # This ensures .env file values (like OPENAI_API_KEY) are available
@@ -35,26 +42,48 @@ logger = structlog.get_logger(__name__)
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAIN_SCRIPT = os.path.join(ROOT_DIR, "main.py")
 
-def ask_assistant(question: str) -> dict[str, Any]:
+slow_execution_threshold = int(validated_env.get("SLOW_EXECUTION_THRESHOLD", 10000))
+
+# Per-question timeout in seconds. If a question takes longer, it is marked as
+# a timeout error and the runner moves on to the next question.
+question_timeout = int(validated_env.get("QUESTION_TIMEOUT", 60))
+
+def ask_assistant(question: str, timeout: int | None = None) -> QueryResponse:
     """Send a question to the AI assistant via the CLI and return the JSON result.
 
     Args:
         question: The user question to evaluate.
+        timeout:  Maximum seconds to wait for the subprocess. Defaults to the
+                  QUESTION_TIMEOUT env var (120s). Pass 0 or None to disable.
 
     Returns:
-        Parsed JSON dict with keys: user_input, plan, final_answer, review_feedback.
+        Parsed QueryResponse with all pipeline fields.
 
     Raises:
+        TimeoutError: If the subprocess exceeds the timeout.
         RuntimeError: If the subprocess exits with a non-zero code.
         json.JSONDecodeError: If the output is not valid JSON.
     """
-    result = subprocess.run(
-        [sys.executable, MAIN_SCRIPT, "--question", question, "--json"],
-        capture_output=True,
-        text=True,
-        cwd=ROOT_DIR,
-        check=False
-    )
+    effective_timeout = timeout if timeout is not None else question_timeout
+
+    try:
+        result = subprocess.run(
+            [sys.executable, MAIN_SCRIPT, "--question", question, "--json"],
+            capture_output=True,
+            text=True,
+            cwd=ROOT_DIR,
+            check=False,
+            timeout=effective_timeout if effective_timeout > 0 else None,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error(
+            "assistant_timeout",
+            question=question[:100],
+            timeout_seconds=effective_timeout,
+        )
+        raise TimeoutError(
+            f"Question timed out after {effective_timeout}s: {question[:80]}"
+        )
 
     if result.returncode != 0:
         logger.error(
@@ -69,11 +98,15 @@ def ask_assistant(question: str) -> dict[str, Any]:
     # The JSON output is the last line printed by main.py (--json flag)
     stdout_lines = result.stdout.strip().splitlines()
     json_line = stdout_lines[-1] if stdout_lines else ""
-    return json.loads(json_line)
+    return QueryResponse.from_dict(json.loads(json_line))
 
 
 def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
     """Run the evaluation suite against the retrieval pipeline.
+
+    Results are saved progressively after each question so that partial
+    results survive interruptions.  A per-question timeout prevents any
+    single question from blocking the entire run.
 
     Args:
         dataset_path: Path to the evaluation JSON file.
@@ -92,9 +125,17 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
 
+    # Create the results file path once, reused for every progressive save
+    results_dir = os.path.join(ROOT_DIR, "evaluation", "results")
+    os.makedirs(results_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    results_file = os.path.join(results_dir, f"eval_{timestamp}.json")
+
     logger.info(
         "run_evaluation_started",
-        questions=len(eval_set)
+        questions=len(eval_set),
+        timeout_per_question=question_timeout,
+        results_file=results_file,
     )
     
     for idx, item in enumerate(eval_set, start=1):
@@ -107,15 +148,8 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
 
         try:
             response = ask_assistant(question)
-            answer = response["final_answer"].lower()
-            retrieved_sources = response.get("retrieved_sources", [])
-
-            # Extract trace fields from the JSON output
-            selected_tool = response.get("selected_tool")
-            tool_input = response.get("tool_input")
-            tool_output = response.get("tool_output")
-            draft_answer = response.get("draft_answer")
-            review_feedback = response.get("review_feedback")
+            answer = response.final_answer.lower()
+            retrieved_sources = response.retrieved_sources
 
             # Keyword matching
             expected = item.get("expected_keywords", [])
@@ -133,15 +167,20 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                 score_sources = len(hits_sources) / len(expected_sources) if expected_sources else 1.0
                 retrieved_sources_list = list(retrieved_sources)
 
+            # Execution trace
+            planner_event = response.execution_trace.planner_events[0]
+            worker_event = response.execution_trace.worker_events[0]
+            reviewer_event = response.execution_trace.reviewer_events[0]
+
             result = {
                 "question": question,
-                "answer": response["final_answer"],
-                "plan": response.get("plan"),
-                "selected_tool": selected_tool,
-                "tool_input": tool_input,
-                "tool_output": tool_output,
-                "draft_answer": draft_answer,
-                "review_feedback": review_feedback,
+                "answer": response.final_answer,
+                "plan": response.plan,
+                "selected_tool": response.selected_tool,
+                "tool_input": response.tool_input,
+                "tool_output": response.tool_output,
+                "draft_answer": response.draft_answer,
+                "review_feedback": response.review_feedback,
                 "retrieved_sources": retrieved_sources_list,
                 "expected_keywords": expected,
                 "matched_keywords": hits,
@@ -150,13 +189,52 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                 "score": score,
                 "score_sources": score_sources,
                 "status": "pass" if score >= 0.5 else "fail",
-                "failure_type": classify_failure(item, response, score, score_sources)
+                "failure_type": classify_failure(item, response, score, score_sources),
+                "timing_metrics": {
+                    "trace": {
+                        "trace_id": response.execution_trace.trace_id,
+                        "started_at": response.execution_trace.started_at,
+                        "ended_at": response.execution_trace.ended_at,
+                        "duration_ms": response.execution_trace.duration_ms
+                    },
+                    "planner": {
+                        "started_at": planner_event.started_at,
+                        "ended_at": planner_event.ended_at,
+                        "duration_ms": planner_event.duration_ms
+                    },
+                    "worker": {
+                        "started_at": worker_event.started_at,
+                        "ended_at": worker_event.ended_at,
+                        "duration_ms": worker_event.duration_ms
+                    },
+                    "reviewer": {
+                        "started_at": reviewer_event.started_at,
+                        "ended_at": reviewer_event.ended_at,
+                        "duration_ms": reviewer_event.duration_ms
+                    }
+                }
             }
             logger.info(
                 "evaluation_result",
                 score=f"{len(hits)}/{len(expected)} matched (score: {score:.0%})",
                 score_sources=f"{len(hits_sources)}/{len(expected_sources)} matched (score: {score_sources:.0%})",
                 failure_type=result["failure_type"]
+            )
+
+        except TimeoutError as exc:
+            result = {
+                "question": question,
+                "answer": None,
+                "error": str(exc),
+                "score": 0.0,
+                "score_sources": 0.0,
+                "status": "timeout",
+                "failure_type": "timeout",
+            }
+            logger.error(
+                "evaluation_timeout",
+                question=question[:100],
+                timeout_seconds=question_timeout,
             )
 
         except Exception as exc:
@@ -177,18 +255,28 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
 
         results.append(result)
 
-    save_evaluation_results(results)
+        # Progressive save — write after every question so partial results survive
+        _save_progress(results, results_file, len(eval_set))
+
+    logger.info(
+        "run_evaluation_completed",
+        total=len(results),
+        results_file=results_file,
+    )
 
     return results
 
-def classify_failure(item: dict, response: dict, score: float, score_sources: float) -> str | None:
+def classify_failure(item: dict, response: QueryResponse, score: float, score_sources: float) -> str | None:
     """Classify the failure type for a failed evaluation item."""
+    if response.execution_trace.duration_ms > slow_execution_threshold:
+        return "slow_execution"
+
     if score >= 0.5:
         return None  # Not a failure
 
     category = item.get("category", "")
-    selected_tool = response.get("selected_tool", "")
-    tool_output = response.get("final_answer", "")
+    selected_tool = response.selected_tool
+    tool_output = response.final_answer
     expected_sources = item.get("expected_sources", [])
 
     # 1. Tool crashed
@@ -214,27 +302,38 @@ def classify_failure(item: dict, response: dict, score: float, score_sources: fl
     # 6. Everything else — reasoning was weak
     return "weak_reasoning"
 
-def save_evaluation_results(results: list[dict[str, Any]]):
-    """Save the evaluation results to a timestamped JSON file in evaluation/results/"""
-    results_dir = os.path.join(ROOT_DIR, "evaluation", "results")
-    os.makedirs(results_dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    results_file = os.path.join(results_dir, f"eval_{timestamp}.json")
+def _save_progress(
+    results: list[dict[str, Any]],
+    results_file: str,
+    total_questions: int,
+) -> None:
+    """Persist current results to disk after each question.
 
-    # Summary
-    total = len(results)
+    Called after every evaluated question so that partial results are
+    available even if the runner is interrupted mid-run.
+
+    Args:
+        results:          Accumulated result dicts so far.
+        results_file:     Absolute path to the output JSON file.
+        total_questions:  Total number of questions in the dataset.
+    """
+    evaluated = len(results)
     passed = sum(1 for r in results if r["status"] == "pass")
     failed = sum(1 for r in results if r["status"] == "fail")
     errors = sum(1 for r in results if r["status"] == "error")
-    avg_score = sum(r["score"] for r in results) / total if total else 0.0
-    avg_score_sources = sum(r["score_sources"] for r in results) / total if total else 0.0
+    timeouts = sum(1 for r in results if r["status"] == "timeout")
+    avg_score = sum(r["score"] for r in results) / evaluated if evaluated else 0.0
+    avg_score_sources = sum(r["score_sources"] for r in results) / evaluated if evaluated else 0.0
 
     summary = {
-        "timestamp": timestamp,
-        "total": total,
+        "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+        "total_questions": total_questions,
+        "evaluated": evaluated,
+        "remaining": total_questions - evaluated,
         "passed": passed,
         "failed": failed,
         "errors": errors,
+        "timeouts": timeouts,
         "avg_score": round(avg_score, 4),
         "avg_score_sources": round(avg_score_sources, 4),
     }
@@ -243,9 +342,9 @@ def save_evaluation_results(results: list[dict[str, Any]]):
         json.dump({"summary": summary, "results": results}, f, indent=2)
 
     logger.info(
-        "evaluation_results_saved", 
+        "progress_saved",
+        progression=f"[{evaluated}/{total_questions}]",
         file=results_file,
-        summary=summary
     )
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from app.rag.retriever import retrieve_context
 from app.rag.vector_store import get_vector_store
 from app.rag.ingestion import load_documents
 from app.rag.chunking import get_all_chunks
+from app.utils.util import calculate_duration_ms
 from app.utils.llm import get_llm
 from app.prompts import format_prompt
 
@@ -36,7 +37,7 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
 
     context = join_results(reranked_results)
     ended = datetime.now()
-    retrieval_trace.duration_ms = (ended - started).total_seconds() * 1000
+    retrieval_trace.duration_ms = calculate_duration_ms(started, ended)
 
     logger.info(
         "retrieved_context_from_hybrid_search",

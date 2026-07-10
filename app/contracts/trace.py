@@ -1,7 +1,8 @@
-import dataclasses
 from datetime import datetime
 from typing import Any, Optional
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
+
+from app.utils.util import serialize_value
 
 @dataclass
 class StageEvent:
@@ -14,6 +15,14 @@ class StageEvent:
     output_snapshot: dict[str, Any]
     error: Optional[str] = None
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "StageEvent":
+        """Create a StageEvent instance from a dictionary, ignoring any extra fields."""
+        valid_fields = {f.name for f in fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+
+        return cls(**filtered_data)
+
 @dataclass
 class RetrievalTrace:
     """Traces the retrieval pipeline: vector search → keyword search → reranking."""
@@ -25,12 +34,21 @@ class RetrievalTrace:
     final_sources: Optional[list[str]] = None
     duration_ms: Optional[float] = None
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "RetrievalTrace":
+        """Create a RetrievalTrace instance from a dictionary, ignoring any extra fields."""
+        valid_fields = {f.name for f in fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+
+        return cls(**filtered_data)
+
 @dataclass
 class ExecutionTrace:
     """Complete trace of a single question→answer execution."""
     trace_id: str
     started_at: datetime
     ended_at: datetime
+    duration_ms: float
 
     planner_events: list[StageEvent]
     worker_events: list[StageEvent]
@@ -42,15 +60,22 @@ class ExecutionTrace:
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serializable dictionary with datetime fields as ISO 8601 strings."""
-        raw = dataclasses.asdict(self)
-        return _serialize_value(raw)
+        raw = asdict(self)
+        return serialize_value(raw)
 
-def _serialize_value(value: Any) -> Any:
-    """Recursively convert datetime objects to ISO 8601 strings for JSON serialization."""
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, dict):
-        return {k: _serialize_value(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_serialize_value(item) for item in value]
-    return value
+    @classmethod
+    def from_dict(cls, data: dict) -> "ExecutionTrace":
+        """Create an ExecutionTrace instance from a dictionary, ignoring any extra fields."""
+        valid_fields = {f.name for f in fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+
+        if 'retrieval_trace' in filtered_data and filtered_data['retrieval_trace']:
+            filtered_data['retrieval_trace'] = RetrievalTrace.from_dict(filtered_data['retrieval_trace'])
+        if 'planner_events' in filtered_data:
+            filtered_data['planner_events'] = [StageEvent.from_dict(e) for e in filtered_data['planner_events']]
+        if 'worker_events' in filtered_data:
+            filtered_data['worker_events'] = [StageEvent.from_dict(e) for e in filtered_data['worker_events']]
+        if 'reviewer_events' in filtered_data:
+            filtered_data['reviewer_events'] = [StageEvent.from_dict(e) for e in filtered_data['reviewer_events']]
+
+        return cls(**filtered_data)

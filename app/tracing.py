@@ -1,5 +1,6 @@
 import structlog
-from app.contracts.trace import ExecutionTrace, RetrievalTrace, StageEvent
+from app.contracts.trace import ExecutionTrace, StageEvent
+from app.utils.util import calculate_duration_ms
 
 logger = structlog.get_logger()
 
@@ -23,7 +24,7 @@ def build_execution_trace(state: dict) -> ExecutionTrace:
         stage="planner",
         started_at=planner_started_at,
         ended_at=planner_ended_at,
-        duration_ms=(planner_ended_at - planner_started_at).total_seconds() * 1000,
+        duration_ms=calculate_duration_ms(planner_started_at, planner_ended_at),
         input_snapshot={"user_input": state["user_input"]},
         output_snapshot={
             "plan": state["plan"],
@@ -36,7 +37,7 @@ def build_execution_trace(state: dict) -> ExecutionTrace:
         stage="worker",
         started_at=worker_started_at,
         ended_at=worker_ended_at,
-        duration_ms=(worker_ended_at - worker_started_at).total_seconds() * 1000,
+        duration_ms=calculate_duration_ms(worker_started_at, worker_ended_at),
         input_snapshot={
             "selected_tool": state["selected_tool"],
             "tool_input": state["tool_input"]
@@ -51,7 +52,7 @@ def build_execution_trace(state: dict) -> ExecutionTrace:
         stage="reviewer",
         started_at=reviewer_started_at,
         ended_at=reviewer_ended_at,
-        duration_ms=(reviewer_ended_at - reviewer_started_at).total_seconds() * 1000,
+        duration_ms=calculate_duration_ms(reviewer_started_at, reviewer_ended_at),
         input_snapshot={
             "user_input": state["user_input"],
             "draft_answer": state["draft_answer"]
@@ -66,6 +67,7 @@ def build_execution_trace(state: dict) -> ExecutionTrace:
         trace_id=state["trace_id"],
         started_at=planner_started_at,
         ended_at=reviewer_ended_at,
+        duration_ms=calculate_duration_ms(planner_started_at, reviewer_ended_at),
         planner_events=[planner_event],
         worker_events=[worker_event],
         reviewer_events=[reviewer_event],
