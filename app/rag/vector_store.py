@@ -13,8 +13,17 @@ logger = structlog.get_logger(__name__)
 # Global vector store instance (singleton pattern)
 _vector_store: Optional[FAISS] = None
 
-# Default persistence path
-VECTOR_STORE_PATH = os.getenv("VECTOR_STORE_PATH", "data/vector_store")
+# Resolve the persistence path relative to the project root so it works
+# regardless of the working directory the server is launched from.
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_VECTOR_STORE_PATH = _PROJECT_ROOT / "data" / "vector_store"
+
+# Allow override via env var; if relative, resolve against project root.
+_raw_path = os.getenv("VECTOR_STORE_PATH")
+VECTOR_STORE_PATH = str(
+    Path(_raw_path) if (_raw_path and Path(_raw_path).is_absolute())
+    else (_PROJECT_ROOT / _raw_path if _raw_path else _DEFAULT_VECTOR_STORE_PATH)
+)
 
 def get_vector_store() -> FAISS:
     """
@@ -96,6 +105,13 @@ def build_vector_store_from_documents() -> FAISS:
         "building_vector_store",
         total_chunks=len(all_chunks)
     )
+
+    if not all_chunks:
+        raise RuntimeError(
+            "No document chunks found. "
+            "Ensure the data/docs directory contains files before starting the server. "
+            f"Resolved docs path: {_DEFAULT_VECTOR_STORE_PATH.parent / 'docs'}"
+        )
 
     # Build FAISS vector store
     vector_store = FAISS.from_documents(all_chunks, embeddings)

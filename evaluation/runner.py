@@ -117,7 +117,7 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
     """
     if dataset_path is None:
         dataset_path = os.path.join(
-            ROOT_DIR, "evaluation", "datasets", "retrieval_eval.json"
+            ROOT_DIR, "evaluation", "datasets", "retrieval_eval_smoke.json"
         )
 
     with open(dataset_path, encoding="utf-8") as f:

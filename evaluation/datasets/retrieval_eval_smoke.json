@@ -1,0 +1,32 @@
+[
+  {
+    "question": "How many different ingestion file source types do we have",
+    "expected_keywords": [
+      "S3FileSource",
+      "LocalFileSource",
+      "HTTPFileSource",
+      "FileSource"
+    ],
+    "expected_sources": [
+      "data/docs/src/ingestion.py",
+      "data/docs/tests/test_ingestion.py",
+      "data/docs/docs/ingestion-flow.md"
+    ],
+    "category": "doc_retriever"
+  },
+  {
+    "question": "Considering only your internal documentation, what inputs does DiffService take?",
+    "expected_keywords": [
+      "JodID",
+      "SystemAData",
+      "SystemBData",
+      "Algorithm"
+    ],
+    "expected_sources": [
+      "data/docs/java-service/src/main/java/com/example/controller/ProcessController.java",
+      "data/docs/architecture/high-level-design.md",
+      "data/docs/src/api.py"
+    ],
+    "category": "doc_retriever"
+  }
+]

@@ -12,8 +12,13 @@
 
 3. **Dependencies**
    ```bash
-   uv add langchain_core langchain-openai langgraph langchain-text-splitters langchain_community ipython python-dotenv structlog pytest pytest-cov pytest-mock faiss-cpu
+   uv add langchain_core langchain-openai langgraph langchain-text-splitters langchain_community ipython python-dotenv structlog pytest pytest-cov pytest-mock faiss-cpu "fastapi[standard]"
    ```
+# FastAPI
+## Run the Development Server
+```bash
+uv run fastapi dev app/api/main.py
+```
 
 # Running the Agent
 ## Interactive mode
