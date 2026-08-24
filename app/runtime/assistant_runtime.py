@@ -19,6 +19,7 @@ class AssistantRuntime:
 
     def __init__(self):
         self._is_initialized = False
+        self.graph = None  # Will be initialized in setup
 
     def setup(self) -> bool:
         """Initialize all required dependencies for the runtime.
@@ -52,6 +53,11 @@ class AssistantRuntime:
         initialize_vector_store()
         logger.info("vector_store_ready")
 
+        # Import here to avoid side effects at module load time
+        from app.agents.graph import get_graph
+        self.graph = get_graph()
+        logger.info("graph_compiled_successfully")
+
         self._is_initialized = True
         return True
 
@@ -76,9 +82,6 @@ class AssistantRuntime:
         if not self._is_initialized:
             self.setup()
 
-        # Import here to avoid side effects at module load time
-        from app.agents.graph import get_graph
-
         # Generate trace_id if not provided
         if trace_id is None:
             trace_id = str(uuid.uuid4())
@@ -102,10 +105,7 @@ class AssistantRuntime:
         )
 
         try:
-            graph = get_graph()
-            logger.info("graph_compiled_successfully")
-
-            final_result = graph.invoke(initial_state, config)
+            final_result = self.graph.invoke(initial_state, config)
             logger.info(
                 "question_answered",
                 user_input=final_result["user_input"],
