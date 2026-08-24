@@ -97,7 +97,10 @@ class AssistantRuntime:
             content_length=len(initial_state.user_input)
         )
 
-        config = {"configurable": {"thread_id": "user_123"}}
+        # Use trace_id as the LangGraph thread_id so every request runs in its
+        # own isolated checkpointer scope — prevents state bleed between
+        # concurrent users or back-to-back calls.
+        config = {"configurable": {"thread_id": trace_id}}
 
         logger.info(
             "graph_initialization",

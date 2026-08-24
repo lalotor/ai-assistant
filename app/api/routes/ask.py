@@ -72,14 +72,6 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
 
     return AskResponse(
         trace_id=trace_id,
-        user_input=response.user_input,
-        plan=response.plan,
-        selected_tool=response.selected_tool,
-        tool_input=response.tool_input,
-        tool_output=response.tool_output,
-        draft_answer=response.draft_answer,
-        final_answer=response.final_answer,
-        review_feedback=response.review_feedback,
-        retrieved_sources=response.retrieved_sources,
-        execution_trace=response.execution_trace.to_dict() if trace else None,
+        answer=response.final_answer,
+        sources=response.retrieved_sources,
     )
