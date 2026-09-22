@@ -3,6 +3,7 @@ import structlog
 from pathlib import Path
 from typing import Optional
 from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
 from app.rag.embeddings import get_embeddings
 from app.rag.ingestion import load_documents
 from app.rag.chunking import get_all_chunks
@@ -12,6 +13,11 @@ logger = structlog.get_logger(__name__)
 
 # Global vector store instance (singleton pattern)
 _vector_store: Optional[FAISS] = None
+
+# Cached chunked corpus, shares the vector store's lifecycle: both are
+# built from get_all_chunks(load_documents()) and both are invalidated
+# together on rebuild_vector_store().
+_cached_chunks: Optional[list[Document]] = None
 
 # Resolve the persistence path relative to the project root so it works
 # regardless of the working directory the server is launched from.
@@ -86,6 +92,23 @@ def initialize_vector_store(force_rebuild: bool = False) -> FAISS:
 
     return vector_store
 
+def _load_and_chunk_documents() -> list[Document]:
+    """
+    Load all documents from disk and chunk them.
+
+    Shared by build_vector_store_from_documents() (building the FAISS
+    index) and get_cached_chunks() (populating the chunk cache), so the
+    load+chunk shape isn't duplicated across both call sites.
+
+    Returns:
+        list[Document]: The chunked corpus
+    """
+    logger.info("loading_documents")
+    docs = load_documents()
+
+    return get_all_chunks(docs)
+
+
 def build_vector_store_from_documents() -> FAISS:
     """
     Build a new vector store from all documents in the data directory.
@@ -95,11 +118,7 @@ def build_vector_store_from_documents() -> FAISS:
     """
     embeddings = get_embeddings()
 
-    # Load and chunk all documents
-    logger.info("loading_documents_for_vector_store")
-    docs = load_documents()
-
-    all_chunks = get_all_chunks(docs)
+    all_chunks = _load_and_chunk_documents()
 
     logger.info(
         "building_vector_store",
@@ -186,9 +205,36 @@ def rebuild_vector_store() -> FAISS:
     Returns:
         FAISS: The newly rebuilt vector store
     """
-    global _vector_store
+    global _vector_store, _cached_chunks
 
     logger.info("force_rebuilding_vector_store")
     _vector_store = initialize_vector_store(force_rebuild=True)
+    _cached_chunks = None
 
     return _vector_store
+
+
+def get_cached_chunks() -> list[Document]:
+    """
+    Get or build the cached chunked corpus.
+
+    Shares its lifecycle with the vector store: both are built from
+    get_all_chunks(load_documents()), and both are invalidated together
+    by rebuild_vector_store(). Callers that need the full chunked corpus
+    (e.g. keyword search) should use this instead of re-loading and
+    re-chunking documents from disk on every call.
+
+    Returns:
+        list[Document]: The cached list of document chunks
+    """
+    global _cached_chunks
+
+    if _cached_chunks is None:
+        logger.info("chunk_cache_miss", action="building")
+        _cached_chunks = _load_and_chunk_documents()
+        logger.info(
+            "chunk_cache_built",
+            chunk_count=len(_cached_chunks)
+        )
+
+    return _cached_chunks

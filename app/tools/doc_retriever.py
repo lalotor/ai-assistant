@@ -4,9 +4,7 @@ from app.contracts.tools import DocInput, DocOutput
 from app.contracts.trace import RetrievalTrace
 from app.rag.keyword_retriever import keyword_search
 from app.rag.retriever import retrieve_context
-from app.rag.vector_store import get_vector_store
-from app.rag.ingestion import load_documents
-from app.rag.chunking import get_all_chunks
+from app.rag.vector_store import get_vector_store, get_cached_chunks
 from app.utils.util import calculate_duration_ms
 from app.utils.llm import get_llm
 from app.prompts import format_prompt
@@ -14,8 +12,16 @@ from app.prompts import format_prompt
 # Get logger for this module
 logger = structlog.get_logger(__name__)
 
+
 def doc_retriever(doc_input: DocInput) -> DocOutput:
-    """Tool to retrieve documentation based on a query."""
+    """Tool to retrieve documentation based on a query.
+
+    Runs Hybrid Retrieval (vector search + keyword search, merged and
+    reranked by the LLM) and returns the resulting context, sources, and
+    a RetrievalTrace. This is the module's only public interface; the
+    hybrid-retrieval, reranking, and formatting steps are internal
+    implementation details reached only through this function.
+    """
     logger.info(
         "doc_retriever",
         query=doc_input.query
@@ -26,16 +32,21 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
         query=doc_input.query
     )
 
-    results = hybrid_retrieve(doc_input.query, retrieval_trace)
-    reranked_results, sources = rerank_results(doc_input.query, results, retrieval_trace)
+    results = _hybrid_retrieve(doc_input.query, retrieval_trace)
+    reranked_results, sources = _rerank_results(doc_input.query, results, retrieval_trace)
     if not reranked_results:
         logger.info(
             "no_relevant_documents_found",
             query=doc_input.query
         )
-        return DocOutput(context="No relevant documentation found for this query. The question may be outside the scope of available technical documentation.")
+        retrieval_trace.duration_ms = calculate_duration_ms(started, datetime.now())
+        return DocOutput(
+            context="No relevant documentation found for this query. The question may be outside the scope of available technical documentation.",
+            sources=[],
+            retrieval_trace=retrieval_trace,
+        )
 
-    context = join_results(reranked_results)
+    context = _join_results(reranked_results)
     ended = datetime.now()
     retrieval_trace.duration_ms = calculate_duration_ms(started, ended)
 
@@ -47,8 +58,14 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
 
     return DocOutput(context=context, sources=sources, retrieval_trace=retrieval_trace)
 
-def hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
-    """Combines vector store retrieval with keyword-based retrieval for a more comprehensive set of results."""
+
+def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
+    """Combines vector store retrieval with keyword-based retrieval for a more comprehensive set of results.
+
+    Uses the cached chunked corpus (app.rag.vector_store.get_cached_chunks)
+    for keyword search instead of reloading and re-chunking documents from
+    disk on every call.
+    """
     vector_store = get_vector_store()
     vector_results = retrieve_context(vector_store, query, k=10)
     logger.info(
@@ -59,8 +76,7 @@ def hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
 
     retrieval_trace.vector_results_count = len(vector_results)
 
-    docs = load_documents()
-    all_chunks = get_all_chunks(docs)
+    all_chunks = get_cached_chunks()
     keyword_results = keyword_search(
         all_chunks,
         query
@@ -96,11 +112,12 @@ def hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
 
     return combined
 
-def rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalTrace) -> tuple[list[dict], list[str]]:
+
+def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalTrace) -> tuple[list[dict], list[str]]:
     """Uses the LLM to rerank retrieved results based on relevance to the query."""
     llm = get_llm()
 
-    joined_chunks = join_results(results)
+    joined_chunks = _join_results(results)
 
     rerank_prompt = format_prompt(
         "doc_retriever.txt",
@@ -109,7 +126,7 @@ def rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalTr
     )
 
     response = llm.invoke(rerank_prompt)
-    indexes = parse_indexes(response.content, len(results))
+    indexes = _parse_indexes(response.content, len(results))
     reranked_results = [results[i] for i in indexes]
     final_sources = list(set(r['source'] for r in reranked_results))
 
@@ -126,14 +143,16 @@ def rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalTr
 
     return reranked_results, final_sources
 
-def join_results(results) -> str:
+
+def _join_results(results) -> str:
     """Formats the retrieved results into a string for LLM input."""
     return "\n\n".join([
         f"*Index: [{i}]\n*Content: [{r['content']}]\n*Source: [{r['source']}]\n*Search Type: [{r['search_type']}]"
         for i, r in enumerate(results)
     ])
 
-def parse_indexes(llm_response, num_results) -> list[int]:
+
+def _parse_indexes(llm_response, num_results) -> list[int]:
     """Parses the LLM response to extract the ranked indexes."""
     indexes = llm_response.split(",")
 
