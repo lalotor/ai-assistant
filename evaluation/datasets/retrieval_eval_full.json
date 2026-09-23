@@ -57,7 +57,7 @@
       "No reference"
     ],
     "expected_sources": [],
-    "category": "failure"
+    "category": "doc_retriever"
   },
   {
     "question": "Considering only your internal documentation, what are the four specialized queue types used in the async processing architecture?",
