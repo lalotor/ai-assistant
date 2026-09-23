@@ -268,7 +268,8 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
 
 def classify_failure(item: dict, response: QueryResponse, score: float, score_sources: float) -> str | None:
     """Classify the failure type for a failed evaluation item."""
-    if response.execution_trace.duration_ms > slow_execution_threshold:
+    duration_ms = response.execution_trace.duration_ms
+    if duration_ms is not None and duration_ms > slow_execution_threshold:
         return "slow_execution"
 
     if score >= 0.5:

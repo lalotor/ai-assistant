@@ -66,3 +66,4 @@ pip-delete-this-directory.txt
 # AI tools
 .slingshot/
 .pi-subagents/
+/AGENTS.md
