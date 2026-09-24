@@ -40,7 +40,7 @@ TOOLS = {
         "invoke": _invoke_architecture_advisor,
     },
     "none": {
-        "description": "Use for general questions that don't require any specific tool",
+        "description": "Use only for general questions with no reference to a specific internal class, service, module, or function - if the question names a specific internal identifier, use doc_retriever instead, since its behavior is defined in internal docs, not general knowledge",
         "invoke": _invoke_none,
     },
 }

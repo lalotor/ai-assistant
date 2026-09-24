@@ -4,12 +4,9 @@ from app.contracts.agent import AgentState
 from app.agents.planner import planner_node
 from app.agents.worker import worker_node
 from app.agents.reviewer import reviewer_node
-from app.utils.llm import get_llm
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
-
-llm = get_llm()
 
 def get_graph():
     """Construct and compile the graph workflow."""

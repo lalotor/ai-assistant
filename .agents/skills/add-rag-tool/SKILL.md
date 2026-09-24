@@ -6,7 +6,7 @@ created: "2026-09-23"
 updated: "2026-09-23"
 ---
 ## When to Use
-Use when adding a new Tool (per CONTEXT.md: a callable capability the Worker invokes, chosen by the Planner's Tool Decision) to the ai-assistant, e.g. a new capability alongside Code Explainer, Doc Retriever, and Architecture Advisor. Not for adding a new pipeline stage/node - use add-langgraph-agent-node for that. Read CONTEXT.md first for the Tool/Tool Decision vocabulary.
+Use when adding a new Tool (per CONTEXT.md: a callable capability the Worker invokes, chosen by the Planner's Tool Decision) to the ai-assistant, e.g. a new capability alongside Code Explainer, Doc Retriever, and Architecture Advisor. Not for adding a new pipeline stage/node - use add-langgraph-agent-node for that. Not for a new HTTP endpoint or AssistantRuntime method - use add-api-endpoint for that. Read CONTEXT.md first for the Tool/Tool Decision vocabulary.
 
 ## Procedure
 1. Read CONTEXT.md's Tools section, then read app/tools/code_explainer.py and app/tools/architecture_advisor.py as the two simplest reference examples (a single public function calling an LLM with a prompt template) before looking at the more complex app/tools/doc_retriever.py if the new tool needs multi-step retrieval logic.

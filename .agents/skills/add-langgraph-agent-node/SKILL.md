@@ -6,7 +6,7 @@ created: "2026-09-23"
 updated: "2026-09-23"
 ---
 ## When to Use
-Use when adding a new stage/node to the ai-assistant's LangGraph workflow (app/agents/graph.py), e.g. extending the fixed Planner -> Worker -> Reviewer sequence with a new stage (per CONTEXT.md terminology). Not for adding a new Tool (a callable the Worker invokes) - use add-rag-tool for that instead. Read CONTEXT.md first so the new node's naming matches existing domain vocabulary (Plan, Draft Answer, Final Answer, etc.), and check with the user via the grilling skill before introducing a new domain term not yet in CONTEXT.md.
+Use when adding a new stage/node to the ai-assistant's LangGraph workflow (app/agents/graph.py), e.g. extending the fixed Planner -> Worker -> Reviewer sequence with a new stage (per CONTEXT.md terminology). Not for adding a new Tool (a callable the Worker invokes) - use add-rag-tool for that instead. Not for a new HTTP endpoint or AssistantRuntime method - use add-api-endpoint for that. Read CONTEXT.md first so the new node's naming matches existing domain vocabulary (Plan, Draft Answer, Final Answer, etc.), and check with the user via the grilling skill before introducing a new domain term not yet in CONTEXT.md.
 
 ## Procedure
 1. Read CONTEXT.md first. If the new node introduces a concept not already in the glossary (e.g. a new stage output), call the domain-modeling skill to name and record it before writing code, rather than inventing ad hoc terminology.
