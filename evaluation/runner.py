@@ -267,12 +267,18 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
     return results
 
 def classify_failure(item: dict, response: QueryResponse, score: float, score_sources: float) -> str | None:
-    """Classify the failure type for a failed evaluation item."""
-    if response.execution_trace.duration_ms > slow_execution_threshold:
-        return "slow_execution"
+    """Classify the failure type for a failed evaluation item.
 
+    Only ever assigns a failure type to items that actually failed
+    (score < 0.5). A passing item is never classified, even if it was
+    slow, since "slow but correct" is not a failure.
+    """
     if score >= 0.5:
         return None  # Not a failure
+
+    duration_ms = response.execution_trace.duration_ms
+    if duration_ms is not None and duration_ms > slow_execution_threshold:
+        return "slow_execution"
 
     category = item.get("category", "")
     selected_tool = response.selected_tool

@@ -41,6 +41,16 @@ python main.py --question "Considering only your internal documentation, how man
 python evaluation/runner.py
 python -m evaluation.runner
 ```
+# Running unit tests suite
+## Standard
+```bash
+uv run pytest
+```
+
+## Run one file
+```bash
+uv run pytest tests/rag/test_chunking.py
+```
 
 # AI Engineering Assistant Roadmap (12 Weeks)
 
