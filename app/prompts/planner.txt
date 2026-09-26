@@ -9,4 +9,12 @@ Available Tools:
 Analyze the user's question and select the most appropriate tool.
 Provide a brief reason for your selection.
 
-If no specific tool is needed, select "none" for a direct answer.
+If the question names a specific internal class, service, module, or
+function (e.g. "How does PaymentRetryService handle X?"), treat it as a
+lookup question and select "doc_retriever" - its behavior is defined in
+internal docs/code, not general knowledge, even if the question reads
+like a conceptual "how does X work" question.
+
+Only select "none" when the question is truly general and does not
+reference any specific internal identifier (e.g. "What is exponential
+backoff?").

@@ -7,8 +7,6 @@ from app.prompts import format_prompt
 # Get logger for this module
 logger = structlog.get_logger(__name__)
 
-llm = get_llm()
-
 def reviewer_node(state: AgentState) -> AgentState:
     """Reviewer node that reviews the draft answer and provides feedback or improvements."""
     logger.info(
@@ -28,7 +26,7 @@ def reviewer_node(state: AgentState) -> AgentState:
     )
 
     # Use structured output with Pydantic model
-    llm_with_structure = llm.with_structured_output(ReviewResult)
+    llm_with_structure = get_llm().with_structured_output(ReviewResult)
     response = llm_with_structure.invoke(review_prompt)
 
     logger.debug(

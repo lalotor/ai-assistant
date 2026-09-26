@@ -1,19 +1,18 @@
 from datetime import datetime
 import structlog
-from app.utils.llm import get_llm
 from app.tools.registry import TOOLS
 from app.contracts.agent import AgentState
-from app.tools.code_explainer import CodeInput
-from app.tools.doc_retriever import DocInput
-from app.tools.architecture_advisor import ArchInput
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
 
-llm = get_llm()
-
 def worker_node(state: AgentState) -> AgentState:
-    """Worker node that decides which tool to call based on user input and LLM decision."""
+    """Worker node that invokes the Tool selected by the Planner.
+
+    Dispatch is tool-agnostic: each registry entry's "invoke" adapter
+    knows its own input model, tool_input key, and result shape, so this
+    function does not need per-tool knowledge (see app.tools.registry).
+    """
     logger.info(
         "node_started",
         node="worker_node",
@@ -23,41 +22,32 @@ def worker_node(state: AgentState) -> AgentState:
 
     started = datetime.now()
 
-    # Route to the appropriate tool based on selection
-    tool_result = None
     tool_input = state.tool_input or {}  # Safely handle None
+    tool_result = None
     retrieved_sources = None
     retrieval_trace = None
 
-    try:
-        if state.selected_tool == "code_explainer":
-            code = tool_input.get("code") or state.user_input
-            result = TOOLS["code_explainer"]["function"](CodeInput(code=code))
-            tool_result = result.explanation
-        elif state.selected_tool == "doc_retriever":
-            query = tool_input.get("query") or state.user_input
-            result = TOOLS["doc_retriever"]["function"](DocInput(query=query))
-            tool_result = result.context
-            retrieved_sources = result.sources
-            retrieval_trace = result.retrieval_trace
-        elif state.selected_tool == "architecture_advisor":
-            question = tool_input.get("question") or state.user_input
-            result = TOOLS["architecture_advisor"]["function"](ArchInput(question=question))
-            tool_result = result.advice
-        else:
-            logger.error(
-                "unknown_tool_selected",
-                selected_tool=state.selected_tool
-            )
-            tool_result = f"Error: Unknown tool '{state.selected_tool}' was selected"
+    tool_entry = TOOLS.get(state.selected_tool)
 
-    except Exception as e:
+    if tool_entry is None:
         logger.error(
-            "tool_execution_failed",
-            selected_tool=state.selected_tool,
-            error=str(e)
+            "unknown_tool_selected",
+            selected_tool=state.selected_tool
         )
-        tool_result = f"Error executing {state.selected_tool}: {str(e)}"
+        tool_result = f"Error: Unknown tool '{state.selected_tool}' was selected"
+    else:
+        try:
+            outcome = tool_entry["invoke"](tool_input, state.user_input)
+            tool_result = outcome["result"]
+            retrieved_sources = outcome["sources"]
+            retrieval_trace = outcome["retrieval_trace"]
+        except Exception as e:
+            logger.error(
+                "tool_execution_failed",
+                selected_tool=state.selected_tool,
+                error=str(e)
+            )
+            tool_result = f"Error executing {state.selected_tool}: {str(e)}"
 
     state.tool_output = str(tool_result)
     state.draft_answer = f"Tool result:\n{state.tool_output}"

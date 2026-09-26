@@ -1,6 +1,6 @@
 [
   {
-    "question": "How many different ingestion file source types do we have",
+    "question": "Considering only your internal documentation, how many ingestion file source types do we have?",
     "expected_keywords": [
       "S3FileSource",
       "LocalFileSource",

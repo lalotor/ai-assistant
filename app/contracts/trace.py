@@ -8,9 +8,9 @@ from app.utils.util import serialize_value
 class StageEvent:
     """A single event recorded during a pipeline stage."""
     stage: str
-    started_at: datetime
-    ended_at: datetime
-    duration_ms: float
+    started_at: Optional[datetime]
+    ended_at: Optional[datetime]
+    duration_ms: Optional[float]
     input_snapshot: dict[str, Any]
     output_snapshot: dict[str, Any]
     error: Optional[str] = None
@@ -46,9 +46,9 @@ class RetrievalTrace:
 class ExecutionTrace:
     """Complete trace of a single question→answer execution."""
     trace_id: str
-    started_at: datetime
-    ended_at: datetime
-    duration_ms: float
+    started_at: Optional[datetime]
+    ended_at: Optional[datetime]
+    duration_ms: Optional[float]
 
     planner_events: list[StageEvent]
     worker_events: list[StageEvent]

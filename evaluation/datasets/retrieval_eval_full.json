@@ -1,6 +1,6 @@
 [
   {
-    "question": "How many different ingestion file source types do we have",
+    "question": "Considering only your internal documentation, how many ingestion file source types do we have?",
     "expected_keywords": [
       "S3FileSource",
       "LocalFileSource",
@@ -57,7 +57,7 @@
       "No reference"
     ],
     "expected_sources": [],
-    "category": "failure"
+    "category": "doc_retriever"
   },
   {
     "question": "Considering only your internal documentation, what are the four specialized queue types used in the async processing architecture?",

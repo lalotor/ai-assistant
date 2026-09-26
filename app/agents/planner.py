@@ -9,8 +9,6 @@ from app.prompts import format_prompt
 # Get logger for this module
 logger = structlog.get_logger(__name__)
 
-llm = get_llm()
-
 def planner_node(state: AgentState) -> AgentState:
     """Evaluate question using structured LLM output for tool selection"""
     logger.info(
@@ -66,7 +64,7 @@ def get_tool_decision(question: str) -> ToolDecision:
     )
 
     # Use structured output with Pydantic model
-    llm_with_structure = llm.with_structured_output(ToolDecision)
+    llm_with_structure = get_llm().with_structured_output(ToolDecision)
     response = llm_with_structure.invoke(tool_selection_prompt)
 
     logger.debug(

@@ -1,22 +1,46 @@
-from app.tools.code_explainer import code_explainer
-from app.tools.doc_retriever import doc_retriever
-from app.tools.architecture_advisor import architecture_advisor
+from app.tools.code_explainer import code_explainer, CodeInput
+from app.tools.doc_retriever import doc_retriever, DocInput
+from app.tools.architecture_advisor import architecture_advisor, ArchInput
+
+
+def _invoke_code_explainer(tool_input: dict, user_input: str) -> dict:
+    code = tool_input.get("code") or user_input
+    result = code_explainer(CodeInput(code=code))
+    return {"result": result.explanation, "sources": None, "retrieval_trace": None}
+
+
+def _invoke_doc_retriever(tool_input: dict, user_input: str) -> dict:
+    query = tool_input.get("query") or user_input
+    result = doc_retriever(DocInput(query=query))
+    return {"result": result.context, "sources": result.sources, "retrieval_trace": result.retrieval_trace}
+
+
+def _invoke_architecture_advisor(tool_input: dict, user_input: str) -> dict:
+    question = tool_input.get("question") or user_input
+    result = architecture_advisor(ArchInput(question=question))
+    return {"result": result.advice, "sources": None, "retrieval_trace": None}
+
+
+def _invoke_none(tool_input: dict, user_input: str) -> dict:
+    """No tool needed: pass the user's input straight through as the result."""
+    return {"result": user_input, "sources": None, "retrieval_trace": None}
+
 
 TOOLS = {
     "code_explainer": {
-        "function": code_explainer,
-        "description": "Use when user provides code snippets that need explanation or analysis"
+        "description": "Use when user provides code snippets that need explanation or analysis",
+        "invoke": _invoke_code_explainer,
     },
     "doc_retriever": {
-        "function": doc_retriever,
-        "description": "Use when user asks about documentation, API references, or needs to look up information for internal technical docs"
+        "description": "Use when user asks about documentation, API references, or needs to look up information for internal technical docs",
+        "invoke": _invoke_doc_retriever,
     },
     "architecture_advisor": {
-        "function": architecture_advisor,
-        "description": "Use when user asks about software architecture, design patterns, or system design questions"
+        "description": "Use when user asks about software architecture, design patterns, or system design questions",
+        "invoke": _invoke_architecture_advisor,
     },
     "none": {
-        "function": None,
-        "description": "Use for general questions that don't require any specific tool"
-    }
+        "description": "Use only for general questions with no reference to a specific internal class, service, module, or function - if the question names a specific internal identifier, use doc_retriever instead, since its behavior is defined in internal docs, not general knowledge",
+        "invoke": _invoke_none,
+    },
 }
