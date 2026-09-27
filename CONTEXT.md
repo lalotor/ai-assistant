@@ -76,3 +76,11 @@ _Avoid_: Correlation ID, Request ID (Trace ID is the canonical term; the others 
 **Stage Timings**:
 The per-stage started_at/ended_at timestamps recorded on the agent state as the Planner, Worker, and Reviewer each run.
 _Avoid_: Timing Data, Performance Metrics
+
+**LLM Call Count**:
+The number of LLM invocations made while running one pipeline stage, recorded on that stage's StageEvent as llm_calls. Not always 1: the Worker's llm_calls is 2, not 1, when the selected Tool is Doc Retriever, since Hybrid Retrieval's reranking step makes its own, otherwise-invisible LLM call in addition to the Planner's tool-selection call and the Reviewer's review call.
+_Avoid_: Number of Requests, API Calls
+
+**Token Usage**:
+The input/output token counts and model name for the LLM call(s) made during one pipeline stage, recorded on that stage's StageEvent as token_usage. None when the provider returned no usage metadata, distinct from a stage that genuinely made zero LLM calls - the two are never conflated.
+_Avoid_: Cost, Token Count (Token Usage is the stage-level structured record; the others are looser terms used only in prose)

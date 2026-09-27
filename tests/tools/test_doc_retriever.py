@@ -38,7 +38,7 @@ class TestDocRetriever:
         )
 
         fake_llm = mocker.Mock()
-        fake_llm.invoke.return_value = mocker.Mock(content="0,1")
+        fake_llm.invoke.return_value = mocker.Mock(content="0,1", usage_metadata=None)
         mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
         mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
 
@@ -65,7 +65,7 @@ class TestDocRetriever:
         )
         mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
         fake_llm = mocker.Mock()
-        fake_llm.invoke.return_value = mocker.Mock(content="")
+        fake_llm.invoke.return_value = mocker.Mock(content="", usage_metadata=None)
         mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
         mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
         # If doc_retriever still imported load_documents/get_all_chunks
@@ -85,7 +85,7 @@ class TestDocRetriever:
         mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
         mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
         fake_llm = mocker.Mock()
-        fake_llm.invoke.return_value = mocker.Mock(content="")
+        fake_llm.invoke.return_value = mocker.Mock(content="", usage_metadata=None)
         mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
         mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
 
@@ -99,3 +99,55 @@ class TestDocRetriever:
         # returning gracefully.
         assert result.retrieval_trace is not None
         assert result.retrieval_trace.query == "unmatched query"
+
+
+@pytest.mark.unit
+class TestDocRetrieverLlmUsage:
+    """Week 9: doc_retriever's reranking step is its one LLM call - reported
+    as DocOutput.llm_calls=1 and token_usage, distinct from the Planner and
+    Reviewer's own calls, and present even on the no-relevant-docs fallback
+    path (the reranking call still happened; it just returned no indexes).
+    """
+
+    def test_reports_one_llm_call_and_its_token_usage(self, mocker):
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch(
+            "app.tools.doc_retriever.retrieve_context",
+            return_value=[{"content": "chunk", "source": "a.md", "file_type": ".md", "score": 0.1, "search_type": "similarity"}],
+        )
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
+        fake_llm = mocker.Mock()
+        fake_llm.model_name = "gpt-5.4-mini"
+        fake_llm.invoke.return_value = mocker.Mock(
+            content="0",
+            usage_metadata={"input_tokens": 300, "output_tokens": 10, "total_tokens": 310},
+        )
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="what is X?"))
+
+        assert result.llm_calls == 1
+        assert result.token_usage == {"input_tokens": 300, "output_tokens": 10, "model": "gpt-5.4-mini"}
+
+    def test_reports_llm_calls_and_none_usage_on_the_no_relevant_docs_fallback(self, mocker):
+        """The reranking LLM call still happens even when it returns no
+        usable indexes - llm_calls must be 1, not 0, on this path too."""
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch("app.tools.doc_retriever.retrieve_context", return_value=[])
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
+        fake_llm = mocker.Mock()
+        fake_llm.invoke.return_value = mocker.Mock(content="", usage_metadata=None)
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="unmatched query"))
+
+        assert result.llm_calls == 1
+        assert result.token_usage is None

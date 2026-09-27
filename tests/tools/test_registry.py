@@ -27,12 +27,18 @@ class TestCodeExplainerInvoke:
     def test_uses_code_from_tool_input_when_present(self, mocker):
         mock_fn = mocker.patch(
             "app.tools.registry.code_explainer",
-            return_value=CodeOutput(explanation="explained"),
+            return_value=CodeOutput(explanation="explained", token_usage={"input_tokens": 1, "output_tokens": 1, "model": "gpt-5.4-mini"}),
         )
 
         outcome = TOOLS["code_explainer"]["invoke"]({"code": "print(1)"}, "fallback")
 
-        assert outcome == {"result": "explained", "sources": None, "retrieval_trace": None}
+        assert outcome == {
+            "result": "explained",
+            "sources": None,
+            "retrieval_trace": None,
+            "llm_calls": 1,
+            "token_usage": {"input_tokens": 1, "output_tokens": 1, "model": "gpt-5.4-mini"},
+        }
         mock_fn.assert_called_once()
         assert mock_fn.call_args[0][0].code == "print(1)"
 
@@ -53,12 +59,24 @@ class TestDocRetrieverInvoke:
         trace = RetrievalTrace(query="q")
         mocker.patch(
             "app.tools.registry.doc_retriever",
-            return_value=DocOutput(context="the context", sources=["a.md"], retrieval_trace=trace),
+            return_value=DocOutput(
+                context="the context",
+                sources=["a.md"],
+                retrieval_trace=trace,
+                llm_calls=1,
+                token_usage={"input_tokens": 2, "output_tokens": 2, "model": "gpt-5.4-mini"},
+            ),
         )
 
         outcome = TOOLS["doc_retriever"]["invoke"]({"query": "what is X?"}, "fallback")
 
-        assert outcome == {"result": "the context", "sources": ["a.md"], "retrieval_trace": trace}
+        assert outcome == {
+            "result": "the context",
+            "sources": ["a.md"],
+            "retrieval_trace": trace,
+            "llm_calls": 1,
+            "token_usage": {"input_tokens": 2, "output_tokens": 2, "model": "gpt-5.4-mini"},
+        }
 
 
 @pytest.mark.unit
@@ -66,12 +84,18 @@ class TestArchitectureAdvisorInvoke:
     def test_surfaces_advice_as_result_with_no_sources(self, mocker):
         mocker.patch(
             "app.tools.registry.architecture_advisor",
-            return_value=ArchOutput(advice="use microservices"),
+            return_value=ArchOutput(advice="use microservices", token_usage={"input_tokens": 3, "output_tokens": 3, "model": "gpt-5.4-mini"}),
         )
 
         outcome = TOOLS["architecture_advisor"]["invoke"]({"question": "should I?"}, "fallback")
 
-        assert outcome == {"result": "use microservices", "sources": None, "retrieval_trace": None}
+        assert outcome == {
+            "result": "use microservices",
+            "sources": None,
+            "retrieval_trace": None,
+            "llm_calls": 1,
+            "token_usage": {"input_tokens": 3, "output_tokens": 3, "model": "gpt-5.4-mini"},
+        }
 
 
 @pytest.mark.unit
@@ -79,4 +103,10 @@ class TestNoneInvoke:
     def test_passes_user_input_through_as_the_result(self):
         outcome = TOOLS["none"]["invoke"]({}, "what's 2+2?")
 
-        assert outcome == {"result": "what's 2+2?", "sources": None, "retrieval_trace": None}
+        assert outcome == {
+            "result": "what's 2+2?",
+            "sources": None,
+            "retrieval_trace": None,
+            "llm_calls": 0,
+            "token_usage": None,
+        }

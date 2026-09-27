@@ -6,7 +6,7 @@ from app.rag.keyword_retriever import keyword_search
 from app.rag.retriever import retrieve_context
 from app.rag.vector_store import get_vector_store, get_cached_chunks
 from app.utils.util import calculate_duration_ms
-from app.utils.llm import get_llm
+from app.utils.llm import get_llm, extract_usage
 from app.prompts import format_prompt
 
 # Get logger for this module
@@ -33,7 +33,7 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
     )
 
     results = _hybrid_retrieve(doc_input.query, retrieval_trace)
-    reranked_results, sources = _rerank_results(doc_input.query, results, retrieval_trace)
+    reranked_results, sources, token_usage = _rerank_results(doc_input.query, results, retrieval_trace)
     if not reranked_results:
         logger.info(
             "no_relevant_documents_found",
@@ -44,6 +44,8 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
             context="No relevant documentation found for this query. The question may be outside the scope of available technical documentation.",
             sources=[],
             retrieval_trace=retrieval_trace,
+            llm_calls=1,
+            token_usage=token_usage,
         )
 
     context = _join_results(reranked_results)
@@ -56,7 +58,13 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
         sources=sources
     )
 
-    return DocOutput(context=context, sources=sources, retrieval_trace=retrieval_trace)
+    return DocOutput(
+        context=context,
+        sources=sources,
+        retrieval_trace=retrieval_trace,
+        llm_calls=1,
+        token_usage=token_usage,
+    )
 
 
 def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
@@ -113,8 +121,17 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
     return combined
 
 
-def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalTrace) -> tuple[list[dict], list[str]]:
-    """Uses the LLM to rerank retrieved results based on relevance to the query."""
+def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalTrace) -> tuple[list[dict], list[str], dict | None]:
+    """Uses the LLM to rerank retrieved results based on relevance to the query.
+
+    This is doc_retriever's only LLM call (Week 9: reported via
+    DocOutput.llm_calls=1 by the caller), distinct from the Planner's
+    tool-selection call and the Reviewer's review call - a Worker
+    dispatching to doc_retriever makes 1 LLM call here, not 0, even
+    though worker_node itself never calls an LLM directly. Confirmed live
+    (evaluation smoke run, 2026-09-27): doc_retriever always reports
+    exactly 1 LLM call, since reranking is its only LLM-calling step.
+    """
     llm = get_llm()
 
     joined_chunks = _join_results(results)
@@ -126,6 +143,7 @@ def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalT
     )
 
     response = llm.invoke(rerank_prompt)
+    token_usage = extract_usage(response, model_name=llm.model_name)
     indexes = _parse_indexes(response.content, len(results))
     reranked_results = [results[i] for i in indexes]
     final_sources = list(set(r['source'] for r in reranked_results))
@@ -141,7 +159,7 @@ def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalT
     retrieval_trace.reranked_count = len(reranked_results)
     retrieval_trace.final_sources = final_sources
 
-    return reranked_results, final_sources
+    return reranked_results, final_sources, token_usage
 
 
 def _join_results(results) -> str:

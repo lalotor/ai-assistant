@@ -76,12 +76,19 @@ def _build_stage_event(
     output_snapshot: dict,
 ) -> StageEvent:
     """Build a StageEvent for one pipeline stage, looking up its timing from
-    state["stage_timings"][stage].
+    state["stage_timings"][stage] and its LLM usage from
+    state["stage_llm_usage"][stage].
 
     If the stage's timing is missing entirely (e.g. stage_timings itself is
     absent, or the stage never ran), started_at/ended_at/duration_ms are
     None rather than empty strings, since ("" - "") is not a valid datetime
     subtraction and would raise.
+
+    If the stage's LLM usage is missing (e.g. an older trace, or a stage
+    that made no LLM calls), llm_calls defaults to 0 and token_usage to
+    None rather than raising - usage tracking is a performance/cost
+    metric, not a correctness field, so its absence must never break
+    trace assembly.
     """
     timing = state.get("stage_timings", {}).get(stage)
     started_at = timing.get("started_at") if timing else None
@@ -93,6 +100,10 @@ def _build_stage_event(
         else None
     )
 
+    usage = state.get("stage_llm_usage", {}).get(stage)
+    llm_calls = usage.get("llm_calls", 0) if usage else 0
+    token_usage = usage.get("token_usage") if usage else None
+
     return StageEvent(
         stage=stage,
         started_at=started_at,
@@ -100,4 +111,6 @@ def _build_stage_event(
         duration_ms=duration_ms,
         input_snapshot=input_snapshot,
         output_snapshot=output_snapshot,
+        llm_calls=llm_calls,
+        token_usage=token_usage,
     )

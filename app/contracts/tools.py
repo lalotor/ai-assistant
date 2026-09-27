@@ -1,4 +1,4 @@
-from typing import Literal, Dict, Any
+from typing import Literal, Dict, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 from app.contracts.trace import RetrievalTrace
@@ -63,12 +63,14 @@ class ArchInput(BaseModel):
 
 class ArchOutput(BaseModel):
     advice: str
+    token_usage: Optional[dict[str, Any]] = None
 
 class CodeInput(BaseModel):
     code: str
 
 class CodeOutput(BaseModel):
     explanation: str
+    token_usage: Optional[dict[str, Any]] = None
 
 class DocInput(BaseModel):
     query: str
@@ -77,3 +79,5 @@ class DocOutput(BaseModel):
     context: str
     sources: list[str]
     retrieval_trace: RetrievalTrace
+    llm_calls: int = 0
+    token_usage: Optional[dict[str, Any]] = None

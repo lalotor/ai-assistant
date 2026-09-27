@@ -26,6 +26,9 @@ def worker_node(state: AgentState) -> AgentState:
     tool_result = None
     retrieved_sources = None
     retrieval_trace = None
+    # Unknown-tool and exception paths make zero LLM calls: nothing ran.
+    llm_calls = 0
+    token_usage = None
 
     tool_entry = TOOLS.get(state.selected_tool)
 
@@ -41,6 +44,10 @@ def worker_node(state: AgentState) -> AgentState:
             tool_result = outcome["result"]
             retrieved_sources = outcome["sources"]
             retrieval_trace = outcome["retrieval_trace"]
+            # .get() with defaults: tolerates older/mocked invoke outcomes
+            # that predate Week 9's llm_calls/token_usage keys.
+            llm_calls = outcome.get("llm_calls", 0)
+            token_usage = outcome.get("token_usage")
         except Exception as e:
             logger.error(
                 "tool_execution_failed",
@@ -58,6 +65,13 @@ def worker_node(state: AgentState) -> AgentState:
     state.stage_timings["worker"] = {
         "started_at": started,
         "ended_at": datetime.now()
+    }
+
+    if state.stage_llm_usage is None:
+        state.stage_llm_usage = {}
+    state.stage_llm_usage["worker"] = {
+        "llm_calls": llm_calls,
+        "token_usage": token_usage,
     }
 
     logger.debug(

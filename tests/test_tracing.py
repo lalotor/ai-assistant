@@ -123,3 +123,63 @@ class TestBuildExecutionTrace:
 
         assert trace.retrieval_trace == "a-fake-retrieval-trace"
         assert trace.final_answer == "X is ..."
+
+
+@pytest.mark.unit
+class TestBuildExecutionTraceLlmUsage:
+    """Week 9: llm_calls/token_usage are performance/cost metrics, sourced
+    from state["stage_llm_usage"][stage] the same way timings are sourced
+    from state["stage_timings"][stage]."""
+
+    def test_reads_llm_calls_and_token_usage_per_stage(self):
+        state = make_full_state(stage_llm_usage={
+            "planner": {
+                "llm_calls": 1,
+                "token_usage": {"input_tokens": 100, "output_tokens": 20, "model": "gpt-5.4-mini"},
+            },
+            "worker": {
+                "llm_calls": 2,
+                "token_usage": {"input_tokens": 500, "output_tokens": 80, "model": "gpt-5.4-mini"},
+            },
+            "reviewer": {
+                "llm_calls": 1,
+                "token_usage": {"input_tokens": 150, "output_tokens": 40, "model": "gpt-5.4-mini"},
+            },
+        })
+
+        trace = build_execution_trace(state)
+
+        assert trace.planner_events[0].llm_calls == 1
+        assert trace.planner_events[0].token_usage == {
+            "input_tokens": 100, "output_tokens": 20, "model": "gpt-5.4-mini"
+        }
+        # Worker's llm_calls is 2 when doc_retriever's reranking step ran,
+        # not 1 - this is the whole point of tracking it separately from a
+        # flat "one call per stage" assumption.
+        assert trace.worker_events[0].llm_calls == 2
+        assert trace.reviewer_events[0].llm_calls == 1
+
+    def test_missing_stage_llm_usage_defaults_to_zero_calls_and_no_token_usage(self):
+        """A stage with no recorded usage (e.g. an older trace, or a stage
+        that made no LLM calls, like the \"none\" tool) must not raise, and
+        must not be silently confused with \"one call happened\"."""
+        state = make_full_state()
+        assert "stage_llm_usage" not in state
+
+        trace = build_execution_trace(state)
+
+        assert trace.planner_events[0].llm_calls == 0
+        assert trace.planner_events[0].token_usage is None
+        assert trace.worker_events[0].llm_calls == 0
+        assert trace.reviewer_events[0].llm_calls == 0
+
+    def test_partial_stage_llm_usage_only_affects_the_stages_present(self):
+        state = make_full_state(stage_llm_usage={
+            "planner": {"llm_calls": 1, "token_usage": {"input_tokens": 100, "output_tokens": 20, "model": "gpt-5.4-mini"}},
+        })
+
+        trace = build_execution_trace(state)
+
+        assert trace.planner_events[0].llm_calls == 1
+        assert trace.worker_events[0].llm_calls == 0
+        assert trace.worker_events[0].token_usage is None

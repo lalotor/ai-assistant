@@ -212,6 +212,23 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                         "ended_at": reviewer_event.ended_at,
                         "duration_ms": reviewer_event.duration_ms
                     }
+                },
+                "llm_usage": {
+                    "planner": {
+                        "llm_calls": planner_event.llm_calls,
+                        "token_usage": planner_event.token_usage
+                    },
+                    "worker": {
+                        "llm_calls": worker_event.llm_calls,
+                        "token_usage": worker_event.token_usage
+                    },
+                    "reviewer": {
+                        "llm_calls": reviewer_event.llm_calls,
+                        "token_usage": reviewer_event.token_usage
+                    },
+                    "total_llm_calls": (
+                        planner_event.llm_calls + worker_event.llm_calls + reviewer_event.llm_calls
+                    )
                 }
             }
             logger.info(

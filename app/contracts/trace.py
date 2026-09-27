@@ -6,7 +6,18 @@ from app.utils.util import serialize_value
 
 @dataclass
 class StageEvent:
-    """A single event recorded during a pipeline stage."""
+    """A single event recorded during a pipeline stage.
+
+    llm_calls and token_usage are performance/cost metrics, not
+    correctness data: llm_calls counts every LLM invocation made while
+    running this stage (e.g. the Worker's llm_calls is 2, not 1, when
+    the selected tool is doc_retriever, since its reranking step makes
+    a second, otherwise-invisible LLM call). token_usage is
+    {"input_tokens": int, "output_tokens": int, "model": str} summed
+    across all of the stage's LLM calls, or None when no usage metadata
+    was available (e.g. the provider didn't return it, or the stage made
+    zero LLM calls).
+    """
     stage: str
     started_at: Optional[datetime]
     ended_at: Optional[datetime]
@@ -14,6 +25,8 @@ class StageEvent:
     input_snapshot: dict[str, Any]
     output_snapshot: dict[str, Any]
     error: Optional[str] = None
+    llm_calls: int = 0
+    token_usage: Optional[dict[str, Any]] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "StageEvent":

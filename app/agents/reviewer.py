@@ -1,6 +1,6 @@
 from datetime import datetime
 import structlog
-from app.utils.llm import get_llm
+from app.utils.llm import get_llm, extract_usage
 from app.contracts.agent import AgentState, ReviewResult
 from app.prompts import format_prompt
 
@@ -25,9 +25,13 @@ def reviewer_node(state: AgentState) -> AgentState:
         selected_tool=state.selected_tool
     )
 
-    # Use structured output with Pydantic model
-    llm_with_structure = get_llm().with_structured_output(ReviewResult)
-    response = llm_with_structure.invoke(review_prompt)
+    # Use structured output with Pydantic model, include_raw=True to reach
+    # usage_metadata (only present on the raw AIMessage, not the parsed model)
+    llm = get_llm()
+    llm_with_structure = llm.with_structured_output(ReviewResult, include_raw=True)
+    outcome = llm_with_structure.invoke(review_prompt)
+    response = outcome["parsed"]
+    token_usage = extract_usage(outcome["raw"], model_name=llm.model_name)
 
     logger.debug(
         "review_complete",
@@ -43,6 +47,13 @@ def reviewer_node(state: AgentState) -> AgentState:
     state.stage_timings["reviewer"] = {
         "started_at": started,
         "ended_at": datetime.now()
+    }
+
+    if state.stage_llm_usage is None:
+        state.stage_llm_usage = {}
+    state.stage_llm_usage["reviewer"] = {
+        "llm_calls": 1,
+        "token_usage": token_usage,
     }
 
     return state
