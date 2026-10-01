@@ -9,6 +9,7 @@ results are preserved even if the runner is interrupted or a later question fail
 A configurable per-question timeout prevents any single question from blocking
 the entire evaluation run.
 """
+from dataclasses import asdict
 from datetime import datetime
 import json
 import os
@@ -212,7 +213,29 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                         "ended_at": reviewer_event.ended_at,
                         "duration_ms": reviewer_event.duration_ms
                     }
-                }
+                },
+                "llm_usage": {
+                    "planner": {
+                        "llm_calls": planner_event.llm_calls,
+                        "token_usage": planner_event.token_usage
+                    },
+                    "worker": {
+                        "llm_calls": worker_event.llm_calls,
+                        "token_usage": worker_event.token_usage
+                    },
+                    "reviewer": {
+                        "llm_calls": reviewer_event.llm_calls,
+                        "token_usage": reviewer_event.token_usage
+                    },
+                    "total_llm_calls": (
+                        planner_event.llm_calls + worker_event.llm_calls + reviewer_event.llm_calls
+                    )
+                },
+                "retrieval_trace": (
+                    asdict(response.execution_trace.retrieval_trace)
+                    if response.execution_trace.retrieval_trace is not None
+                    else None
+                ),
             }
             logger.info(
                 "evaluation_result",

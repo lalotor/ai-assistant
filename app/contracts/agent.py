@@ -21,6 +21,7 @@ class AgentState(BaseModel):
     retrieved_sources: Optional[list[str]] = None
 
     stage_timings: Optional[Dict[str, Any]] = None
+    stage_llm_usage: Optional[Dict[str, Any]] = None
     trace_id: str
     retrieval_trace: Optional[RetrievalTrace] = None
 

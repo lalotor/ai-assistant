@@ -122,3 +122,78 @@ class TestWorkerNodeDispatch:
         assert "worker" in result.stage_timings
         assert "started_at" in result.stage_timings["worker"]
         assert "ended_at" in result.stage_timings["worker"]
+
+
+@pytest.mark.unit
+class TestWorkerNodeLlmUsage:
+    """Week 9: worker_node surfaces the invoke adapter's llm_calls/
+    token_usage into state.stage_llm_usage["worker"] - this is where the
+    doc_retriever reranking call (invisible to a flat "one call per stage"
+    view) becomes visible in the trace."""
+
+    def test_surfaces_llm_calls_and_token_usage_from_the_invoke_outcome(self, mocker):
+        mocker.patch(
+            "app.agents.worker.TOOLS",
+            {"doc_retriever": {"invoke": mocker.Mock(return_value={
+                "result": "the context", "sources": ["a.md"], "retrieval_trace": None,
+                "llm_calls": 1,
+                "token_usage": {"input_tokens": 400, "output_tokens": 50, "model": "gpt-5.4-mini"},
+            })}},
+        )
+        state = make_state("doc_retriever", tool_input={"query": "what is X?"})
+
+        result = worker_node(state)
+
+        assert result.stage_llm_usage["worker"]["llm_calls"] == 1
+        assert result.stage_llm_usage["worker"]["token_usage"] == {
+            "input_tokens": 400, "output_tokens": 50, "model": "gpt-5.4-mini"
+        }
+
+    def test_none_tool_records_zero_llm_calls(self):
+        """The real "none" registry entry makes zero LLM calls (pure
+        pass-through) - this must show as 0, not be silently absent."""
+        state = make_state("none", tool_input={}, user_input="what's 2+2?")
+
+        result = worker_node(state)
+
+        assert result.stage_llm_usage["worker"]["llm_calls"] == 0
+        assert result.stage_llm_usage["worker"]["token_usage"] is None
+
+    def test_unknown_tool_records_zero_llm_calls(self):
+        """Nothing ran, so nothing was called - zero LLM calls, not an
+        error or a missing key."""
+        state = make_state("not_a_real_tool")
+
+        result = worker_node(state)
+
+        assert result.stage_llm_usage["worker"]["llm_calls"] == 0
+        assert result.stage_llm_usage["worker"]["token_usage"] is None
+
+    def test_tool_exception_records_zero_llm_calls(self, mocker):
+        mocker.patch(
+            "app.agents.worker.TOOLS",
+            {"doc_retriever": {"invoke": mocker.Mock(side_effect=RuntimeError("boom"))}},
+        )
+        state = make_state("doc_retriever", tool_input={"query": "x"})
+
+        result = worker_node(state)
+
+        assert result.stage_llm_usage["worker"]["llm_calls"] == 0
+        assert result.stage_llm_usage["worker"]["token_usage"] is None
+
+    def test_tolerates_an_invoke_outcome_missing_the_new_keys(self, mocker):
+        """Defensive: an outcome dict predating Week 9's llm_calls/
+        token_usage keys (e.g. a test double elsewhere in the suite) must
+        not raise a KeyError."""
+        mocker.patch(
+            "app.agents.worker.TOOLS",
+            {"code_explainer": {"invoke": mocker.Mock(return_value={
+                "result": "explained", "sources": None, "retrieval_trace": None
+            })}},
+        )
+        state = make_state("code_explainer", tool_input={"code": "print(1)"})
+
+        result = worker_node(state)
+
+        assert result.stage_llm_usage["worker"]["llm_calls"] == 0
+        assert result.stage_llm_usage["worker"]["token_usage"] is None

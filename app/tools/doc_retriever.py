@@ -6,11 +6,23 @@ from app.rag.keyword_retriever import keyword_search
 from app.rag.retriever import retrieve_context
 from app.rag.vector_store import get_vector_store, get_cached_chunks
 from app.utils.util import calculate_duration_ms
-from app.utils.llm import get_llm
+from app.utils.llm import get_llm, extract_usage
 from app.prompts import format_prompt
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
+
+# Number of candidates requested from FAISS similarity search. Week 9
+# Session 2b considered reducing this from 10 to 5 after the Session 2a
+# baseline showed vector search averaging 587ms/call (39% of
+# doc_retriever's own time) - but a live 3-run full-dataset eval showed
+# no latency improvement (vector_search avg rose to 687ms) and a small
+# answer-score dip within normal run-to-run noise, so the change was
+# reverted (see evaluation/reports/optimized.md's "Reverted candidate"
+# note). Kept at 10: vector search's cost here is dominated by the
+# embedding API round-trip, not FAISS's local candidate-count scoring,
+# so k isn't the lever this bottleneck needs.
+_VECTOR_SEARCH_K = 10
 
 
 def doc_retriever(doc_input: DocInput) -> DocOutput:
@@ -33,7 +45,7 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
     )
 
     results = _hybrid_retrieve(doc_input.query, retrieval_trace)
-    reranked_results, sources = _rerank_results(doc_input.query, results, retrieval_trace)
+    reranked_results, sources, token_usage, llm_calls = _rerank_results(doc_input.query, results, retrieval_trace)
     if not reranked_results:
         logger.info(
             "no_relevant_documents_found",
@@ -44,6 +56,8 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
             context="No relevant documentation found for this query. The question may be outside the scope of available technical documentation.",
             sources=[],
             retrieval_trace=retrieval_trace,
+            llm_calls=llm_calls,
+            token_usage=token_usage,
         )
 
     context = _join_results(reranked_results)
@@ -56,7 +70,13 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
         sources=sources
     )
 
-    return DocOutput(context=context, sources=sources, retrieval_trace=retrieval_trace)
+    return DocOutput(
+        context=context,
+        sources=sources,
+        retrieval_trace=retrieval_trace,
+        llm_calls=llm_calls,
+        token_usage=token_usage,
+    )
 
 
 def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
@@ -66,8 +86,10 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
     for keyword search instead of reloading and re-chunking documents from
     disk on every call.
     """
+    vector_started = datetime.now()
     vector_store = get_vector_store()
-    vector_results = retrieve_context(vector_store, query, k=10)
+    vector_results = retrieve_context(vector_store, query, k=_VECTOR_SEARCH_K)
+    retrieval_trace.vector_search_ms = calculate_duration_ms(vector_started, datetime.now())
     logger.info(
         "hybrid_stage_vector",
         count=len(vector_results),
@@ -76,11 +98,13 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
 
     retrieval_trace.vector_results_count = len(vector_results)
 
+    keyword_started = datetime.now()
     all_chunks = get_cached_chunks()
     keyword_results = keyword_search(
         all_chunks,
         query
     )
+    retrieval_trace.keyword_search_ms = calculate_duration_ms(keyword_started, datetime.now())
     logger.info(
         "hybrid_stage_keyword",
         count=len(keyword_results),
@@ -89,6 +113,7 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
 
     retrieval_trace.keyword_results_count = len(keyword_results)
 
+    merge_started = datetime.now()
     combined = []
     seen = set()
 
@@ -101,6 +126,7 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
             combined.append(result)
             seen.add(content)
 
+    retrieval_trace.merge_ms = calculate_duration_ms(merge_started, datetime.now())
     logger.info(
         "hybrid_stage_merged",
         total_count=len(combined),
@@ -113,8 +139,50 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
     return combined
 
 
-def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalTrace) -> tuple[list[dict], list[str]]:
-    """Uses the LLM to rerank retrieved results based on relevance to the query."""
+# Below this many merged candidates, the LLM reranker has nothing
+# meaningful to choose between - its own prompt instructs it to return
+# the "best 3" anyway, so a set this small would just come back
+# unchanged. Week 9 Session 2b: skip the LLM call entirely in that case,
+# since it's pure latency overhead with zero quality trade-off (there's
+# nothing to rank away, unlike skipping reranking on a large set would be).
+_TRIVIAL_RERANK_THRESHOLD = 3
+
+
+def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalTrace) -> tuple[list[dict], list[str], dict | None, int]:
+    """Uses the LLM to rerank retrieved results based on relevance to the query.
+
+    Returns (reranked_results, final_sources, token_usage, llm_calls) -
+    llm_calls is reported here, at the one place that knows whether the
+    LLM was actually invoked, rather than re-derived by the caller from
+    the same _TRIVIAL_RERANK_THRESHOLD check (Week 9 Session 2b: a prior
+    version of this change checked the threshold in both doc_retriever()
+    and here, which was flagged as a Duplicated Code/Shotgun Surgery risk
+    in review - a future threshold change would otherwise need both call
+    sites updated in lockstep).
+
+    This is doc_retriever's only possible LLM call (Week 9 Session 1:
+    reported via DocOutput.llm_calls by the caller), distinct from the
+    Planner's tool-selection call and the Reviewer's review call - a
+    Worker dispatching to doc_retriever makes at most 1 LLM call here,
+    even though worker_node itself never calls an LLM directly. Week 9
+    Session 2b: "at most", not "always exactly" 1 - see
+    _TRIVIAL_RERANK_THRESHOLD; a call with <= that many merged results
+    makes 0 LLM calls, since there's nothing to rerank.
+    """
+    rerank_started = datetime.now()
+
+    if len(results) <= _TRIVIAL_RERANK_THRESHOLD:
+        final_sources = list(set(r['source'] for r in results))
+        retrieval_trace.rerank_ms = calculate_duration_ms(rerank_started, datetime.now())
+        retrieval_trace.reranked_count = len(results)
+        retrieval_trace.final_sources = final_sources
+        logger.info(
+            "hybrid_stage_reranked_skipped_trivial",
+            input_count=len(results),
+            final_sources=final_sources,
+        )
+        return results, final_sources, None, 0
+
     llm = get_llm()
 
     joined_chunks = _join_results(results)
@@ -126,9 +194,12 @@ def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalT
     )
 
     response = llm.invoke(rerank_prompt)
+    token_usage = extract_usage(response, model_name=llm.model_name)
     indexes = _parse_indexes(response.content, len(results))
     reranked_results = [results[i] for i in indexes]
     final_sources = list(set(r['source'] for r in reranked_results))
+
+    retrieval_trace.rerank_ms = calculate_duration_ms(rerank_started, datetime.now())
 
     logger.info(
         "hybrid_stage_reranked",
@@ -141,7 +212,7 @@ def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalT
     retrieval_trace.reranked_count = len(reranked_results)
     retrieval_trace.final_sources = final_sources
 
-    return reranked_results, final_sources
+    return reranked_results, final_sources, token_usage, 1
 
 
 def _join_results(results) -> str:

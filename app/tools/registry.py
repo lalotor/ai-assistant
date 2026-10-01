@@ -6,24 +6,43 @@ from app.tools.architecture_advisor import architecture_advisor, ArchInput
 def _invoke_code_explainer(tool_input: dict, user_input: str) -> dict:
     code = tool_input.get("code") or user_input
     result = code_explainer(CodeInput(code=code))
-    return {"result": result.explanation, "sources": None, "retrieval_trace": None}
+    return {
+        "result": result.explanation,
+        "sources": None,
+        "retrieval_trace": None,
+        "llm_calls": 1,
+        "token_usage": result.token_usage,
+    }
 
 
 def _invoke_doc_retriever(tool_input: dict, user_input: str) -> dict:
     query = tool_input.get("query") or user_input
     result = doc_retriever(DocInput(query=query))
-    return {"result": result.context, "sources": result.sources, "retrieval_trace": result.retrieval_trace}
+    return {
+        "result": result.context,
+        "sources": result.sources,
+        "retrieval_trace": result.retrieval_trace,
+        "llm_calls": result.llm_calls,
+        "token_usage": result.token_usage,
+    }
 
 
 def _invoke_architecture_advisor(tool_input: dict, user_input: str) -> dict:
     question = tool_input.get("question") or user_input
     result = architecture_advisor(ArchInput(question=question))
-    return {"result": result.advice, "sources": None, "retrieval_trace": None}
+    return {
+        "result": result.advice,
+        "sources": None,
+        "retrieval_trace": None,
+        "llm_calls": 1,
+        "token_usage": result.token_usage,
+    }
 
 
 def _invoke_none(tool_input: dict, user_input: str) -> dict:
-    """No tool needed: pass the user's input straight through as the result."""
-    return {"result": user_input, "sources": None, "retrieval_trace": None}
+    """No tool needed: pass the user's input straight through as the
+    result. Makes zero LLM calls."""
+    return {"result": user_input, "sources": None, "retrieval_trace": None, "llm_calls": 0, "token_usage": None}
 
 
 TOOLS = {

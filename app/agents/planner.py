@@ -1,8 +1,9 @@
 import structlog
 from datetime import datetime
+from typing import Optional
 from app.contracts.tools import ToolDecision
 from app.contracts.agent import AgentState
-from app.utils.llm import get_llm
+from app.utils.llm import get_llm, extract_usage
 from app.tools.registry import TOOLS
 from app.prompts import format_prompt
 
@@ -20,7 +21,7 @@ def planner_node(state: AgentState) -> AgentState:
     started = datetime.now()
 
     # Use LLM with structured output to decide which tool to use
-    tool_decision = get_tool_decision(state.user_input)
+    tool_decision, token_usage = get_tool_decision(state.user_input)
 
     logger.info(
         "tool_decision_made",
@@ -39,10 +40,24 @@ def planner_node(state: AgentState) -> AgentState:
         "ended_at": datetime.now()
     }
 
+    if state.stage_llm_usage is None:
+        state.stage_llm_usage = {}
+    state.stage_llm_usage["planner"] = {
+        "llm_calls": 1,
+        "token_usage": token_usage,
+    }
+
     return state
 
-def get_tool_decision(question: str) -> ToolDecision:
-    """Use LLM with structured output to decide which tool to use."""
+def get_tool_decision(question: str) -> tuple[ToolDecision, Optional[dict]]:
+    """Use LLM with structured output to decide which tool to use.
+
+    Returns (decision, token_usage): token_usage is the
+    {"input_tokens", "output_tokens", "model"} shape from
+    app.utils.llm.extract_usage, or None if the provider gave no usage
+    metadata. include_raw=True is required to reach usage_metadata at
+    all - the parsed Pydantic model alone carries no token information.
+    """
 
     # Build tool descriptions for the prompt from TOOLS registry
     tool_options = "\n".join([
@@ -63,9 +78,13 @@ def get_tool_decision(question: str) -> ToolDecision:
         prompt_length=len(tool_selection_prompt)
     )
 
-    # Use structured output with Pydantic model
-    llm_with_structure = get_llm().with_structured_output(ToolDecision)
-    response = llm_with_structure.invoke(tool_selection_prompt)
+    # Use structured output with Pydantic model, include_raw=True to reach
+    # usage_metadata (only present on the raw AIMessage, not the parsed model)
+    llm = get_llm()
+    llm_with_structure = llm.with_structured_output(ToolDecision, include_raw=True)
+    outcome = llm_with_structure.invoke(tool_selection_prompt)
+    response = outcome["parsed"]
+    token_usage = extract_usage(outcome["raw"], model_name=llm.model_name)
 
     logger.debug(
         "get_tool_decision_response",
@@ -73,4 +92,4 @@ def get_tool_decision(question: str) -> ToolDecision:
         reason=response.reason
     )
 
-    return response
+    return response, token_usage

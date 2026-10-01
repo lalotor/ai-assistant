@@ -66,7 +66,7 @@ The complete record of a single question's run across the Planner, Worker, and R
 _Avoid_: Run Log, Execution Record
 
 **Retrieval Trace**:
-A nested trace of one Hybrid Retrieval invocation: vector result count, keyword result count, merged count, reranked count, and final sources. Always contained within an Execution Trace, never standalone.
+A nested trace of one Hybrid Retrieval invocation: vector result count, keyword result count, merged count, reranked count, final sources, and an overall duration, broken down by sub-stage into vector search, keyword search, merge, and rerank timings (each `None`, not `0`, when that sub-stage was never measured). Always contained within an Execution Trace, never standalone.
 _Avoid_: Retrieval Log
 
 **Trace ID**:
@@ -76,3 +76,11 @@ _Avoid_: Correlation ID, Request ID (Trace ID is the canonical term; the others 
 **Stage Timings**:
 The per-stage started_at/ended_at timestamps recorded on the agent state as the Planner, Worker, and Reviewer each run.
 _Avoid_: Timing Data, Performance Metrics
+
+**LLM Call Count**:
+The number of LLM invocations made while running one pipeline stage, recorded on that stage's StageEvent as llm_calls. Not always 1: the Worker's llm_calls is 2, not 1, when the selected Tool is Doc Retriever, since Hybrid Retrieval's reranking step makes its own, otherwise-invisible LLM call in addition to the Planner's tool-selection call and the Reviewer's review call.
+_Avoid_: Number of Requests, API Calls
+
+**Token Usage**:
+The input/output token counts and model name for the LLM call(s) made during one pipeline stage, recorded on that stage's StageEvent as token_usage. None when the provider returned no usage metadata, distinct from a stage that genuinely made zero LLM calls - the two are never conflated.
+_Avoid_: Cost, Token Count (Token Usage is the stage-level structured record; the others are looser terms used only in prose)
