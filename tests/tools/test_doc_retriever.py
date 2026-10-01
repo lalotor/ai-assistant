@@ -52,6 +52,26 @@ class TestDocRetriever:
         assert result.retrieval_trace.merged_count == 2
         assert result.retrieval_trace.reranked_count == 2
 
+    def test_requests_the_tuned_vector_search_k(self, mocker):
+        """Week 9 Session 2b: a k=10->5 reduction was tried and reverted
+        after a live 3-run eval showed no latency improvement (vector
+        search's cost here is dominated by the embedding API call, not
+        FAISS's local candidate-count scoring) - k stays at 10. This locks
+        in that outcome so a future change doesn't silently drop it."""
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        retrieve_context_mock = mocker.patch("app.tools.doc_retriever.retrieve_context", return_value=[])
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=mocker.Mock())
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        doc_retriever(DocInput(query="anything"))
+
+        retrieve_context_mock.assert_called_once()
+        assert retrieve_context_mock.call_args.kwargs["k"] == 10
+
     def test_does_not_reload_documents_from_disk(self, mocker):
         """Regression test for the fix: doc_retriever must use the chunk
         cache instead of calling load_documents()/get_all_chunks() itself."""
