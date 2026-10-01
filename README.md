@@ -40,7 +40,18 @@ python main.py --question "Considering only your internal documentation, how man
 ```bash
 python evaluation/runner.py
 python -m evaluation.runner
+
+uv run python -c "
+from evaluation.runner import run_evaluation
+run_evaluation('evaluation/datasets/retrieval_eval_full.json')"
 ```
+
+## Run evaluation report
+```bash
+python -m evaluation.build_report --results evaluation/results/eval_<ts>.json --title "Baseline run" --name baseline
+python -m evaluation.build_report --title "Baseline run" --name baseline   # uses the most recent results file
+```
+
 # Running unit tests suite
 ## Standard
 ```bash
