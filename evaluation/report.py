@@ -49,6 +49,13 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
     scores (score/score_sources) are averaged across all timed items the
     same way, since an untimed item has no meaningful score either.
 
+    Week 9 Session 2a: retrieval_stage_latency_ms_avg averages
+    doc_retriever's vector_search_ms/keyword_search_ms/merge_ms/rerank_ms
+    sub-stage timings, but only over items that actually carry a
+    retrieval_trace (i.e. doc_retriever was the selected tool) - other
+    tools never populate it, and reporting 0ms for them would misreport
+    "never measured" as "instant".
+
     Returns a report dict shaped for both direct inspection and JSON
     serialization - see PROMPT/roadmap Session 1's example report layout.
     """
@@ -87,6 +94,24 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
     scores = [r["score"] for r in timed_results if r.get("score") is not None]
     scores_sources = [r["score_sources"] for r in timed_results if r.get("score_sources") is not None]
 
+    retrieval_stage_latencies: dict[str, list[float]] = {
+        "vector_search": [], "keyword_search": [], "merge": [], "rerank": []
+    }
+    retrieval_field_by_stage = {
+        "vector_search": "vector_search_ms",
+        "keyword_search": "keyword_search_ms",
+        "merge": "merge_ms",
+        "rerank": "rerank_ms",
+    }
+    for r in timed_results:
+        trace = r.get("retrieval_trace")
+        if not trace:
+            continue
+        for stage, field in retrieval_field_by_stage.items():
+            value = trace.get(field)
+            if value is not None:
+                retrieval_stage_latencies[stage].append(value)
+
     n_timed = len(timed_results)
 
     return {
@@ -99,6 +124,9 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "stage_latency_ms_avg": {
             stage: _avg(values) for stage, values in stage_latencies.items()
+        },
+        "retrieval_stage_latency_ms_avg": {
+            stage: _avg(values) for stage, values in retrieval_stage_latencies.items()
         },
         "scores": {
             "avg_answer_score": _avg(scores),
@@ -138,6 +166,11 @@ def format_baseline_report_markdown(report: dict[str, Any], title: str = "Evalua
         f"Planner avg:          {fmt(report['stage_latency_ms_avg']['planner'], ' ms')}",
         f"Worker avg:           {fmt(report['stage_latency_ms_avg']['worker'], ' ms')}",
         f"Reviewer avg:         {fmt(report['stage_latency_ms_avg']['reviewer'], ' ms')}",
+        "",
+        f"  vector search avg:  {fmt(report['retrieval_stage_latency_ms_avg']['vector_search'], ' ms')}",
+        f"  keyword search avg: {fmt(report['retrieval_stage_latency_ms_avg']['keyword_search'], ' ms')}",
+        f"  merge avg:          {fmt(report['retrieval_stage_latency_ms_avg']['merge'], ' ms')}",
+        f"  rerank avg:         {fmt(report['retrieval_stage_latency_ms_avg']['rerank'], ' ms')}",
         "",
         f"Avg answer score:     {fmt(report['scores']['avg_answer_score'])}",
         f"Avg retrieval score:  {fmt(report['scores']['avg_retrieval_score'])}",

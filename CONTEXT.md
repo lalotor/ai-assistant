@@ -66,7 +66,7 @@ The complete record of a single question's run across the Planner, Worker, and R
 _Avoid_: Run Log, Execution Record
 
 **Retrieval Trace**:
-A nested trace of one Hybrid Retrieval invocation: vector result count, keyword result count, merged count, reranked count, and final sources. Always contained within an Execution Trace, never standalone.
+A nested trace of one Hybrid Retrieval invocation: vector result count, keyword result count, merged count, reranked count, final sources, and an overall duration, broken down by sub-stage into vector search, keyword search, merge, and rerank timings (each `None`, not `0`, when that sub-stage was never measured). Always contained within an Execution Trace, never standalone.
 _Avoid_: Retrieval Log
 
 **Trace ID**:

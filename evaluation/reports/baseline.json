@@ -1,22 +1,28 @@
 {
   "questions": 33,
-  "evaluated": 32,
+  "evaluated": 33,
   "latency_ms": {
-    "avg": 7336.125625,
-    "p50": 4116.938,
-    "p95": 18021.586
+    "avg": 9166.099242424243,
+    "p50": 4566.603,
+    "p95": 22426.169
   },
   "stage_latency_ms_avg": {
-    "planner": 1298.99365625,
-    "worker": 4000.56840625,
-    "reviewer": 2035.073125
+    "planner": 1727.9237878787878,
+    "worker": 4929.134787878788,
+    "reviewer": 2506.3779696969696
+  },
+  "retrieval_stage_latency_ms_avg": {
+    "vector_search": 586.6411428571429,
+    "keyword_search": 43.44757142857143,
+    "merge": 0.00919047619047619,
+    "rerank": 884.2860952380953
   },
   "scores": {
-    "avg_answer_score": 0.66640625,
-    "avg_retrieval_score": 0.4427083333333333
+    "avg_answer_score": 0.6787878787878787,
+    "avg_retrieval_score": 0.4191919191919192
   },
   "llm_calls": {
-    "total": 96,
+    "total": 99,
     "avg_per_question": 3.0,
     "stage_avg": {
       "planner": 1.0,
@@ -25,14 +31,14 @@
     }
   },
   "tokens": {
-    "total_input_tokens": 86935,
-    "total_output_tokens": 29105,
-    "total_tokens": 116040,
-    "avg_tokens_per_question": 3626.25
+    "total_input_tokens": 88070,
+    "total_output_tokens": 33211,
+    "total_tokens": 121281,
+    "avg_tokens_per_question": 3675.181818181818
   },
   "source_results_files": [
-    "evaluation/results/eval_2026-09-27_10-10-04.json",
-    "evaluation/results/eval_2026-09-27_10-11-43.json",
-    "evaluation/results/eval_2026-09-27_10-14-09.json"
+    "evaluation/results/eval_2026-10-01_12-07-15.json",
+    "evaluation/results/eval_2026-10-01_12-09-20.json",
+    "evaluation/results/eval_2026-10-01_12-11-25.json"
   ]
 }

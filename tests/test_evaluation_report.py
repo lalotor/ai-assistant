@@ -25,9 +25,15 @@ def make_result(
     planner_tokens=(100, 20),
     worker_tokens=(500, 80),
     reviewer_tokens=(150, 40),
+    retrieval_trace=None,
 ) -> dict:
     """A complete, fully-timed evaluation result dict, matching the shape
-    evaluation.runner.run_evaluation() actually produces."""
+    evaluation.runner.run_evaluation() actually produces.
+
+    retrieval_trace defaults to None, matching every non-doc_retriever
+    item (it's only populated when selected_tool == "doc_retriever");
+    pass a dict (see make_retrieval_trace()) to simulate a doc_retriever item.
+    """
 
     def usage(calls, tokens):
         if tokens is None:
@@ -54,6 +60,31 @@ def make_result(
             "reviewer": usage(reviewer_calls, reviewer_tokens),
             "total_llm_calls": planner_calls + worker_calls + reviewer_calls,
         },
+        "retrieval_trace": retrieval_trace,
+    }
+
+
+def make_retrieval_trace(
+    vector_search_ms=100.0,
+    keyword_search_ms=50.0,
+    merge_ms=10.0,
+    rerank_ms=800.0,
+) -> dict:
+    """A RetrievalTrace dict (as produced by dataclasses.asdict), matching
+    the shape evaluation.runner.run_evaluation() stores under
+    result["retrieval_trace"] for doc_retriever items."""
+    return {
+        "query": "a question",
+        "vector_results_count": 10,
+        "keyword_results_count": 5,
+        "merged_count": 12,
+        "reranked_count": 3,
+        "final_sources": ["a.md"],
+        "duration_ms": 960.0,
+        "vector_search_ms": vector_search_ms,
+        "keyword_search_ms": keyword_search_ms,
+        "merge_ms": merge_ms,
+        "rerank_ms": rerank_ms,
     }
 
 
@@ -169,6 +200,77 @@ class TestBuildBaselineReport:
         assert report["evaluated"] == 0
         assert report["latency_ms"]["avg"] is None
         assert report["tokens"]["total_tokens"] == 0
+
+
+@pytest.mark.unit
+class TestRetrievalSubStageAggregation:
+    """Week 9 Session 2a: build_baseline_report() also aggregates
+    doc_retriever's four sub-stage timings (vector/keyword/merge/rerank),
+    averaged only over items that actually have a retrieval_trace - other
+    tools (code_explainer, architecture_advisor, none) never populate it,
+    and must not be silently coerced into a 0ms average."""
+
+    def test_computes_average_sub_stage_timings_across_doc_retriever_items(self):
+        results = [
+            make_result(retrieval_trace=make_retrieval_trace(
+                vector_search_ms=100.0, keyword_search_ms=50.0, merge_ms=10.0, rerank_ms=800.0,
+            )),
+            make_result(retrieval_trace=make_retrieval_trace(
+                vector_search_ms=300.0, keyword_search_ms=150.0, merge_ms=30.0, rerank_ms=1200.0,
+            )),
+        ]
+
+        report = build_baseline_report(results)
+
+        assert report["retrieval_stage_latency_ms_avg"]["vector_search"] == 200.0
+        assert report["retrieval_stage_latency_ms_avg"]["keyword_search"] == 100.0
+        assert report["retrieval_stage_latency_ms_avg"]["merge"] == 20.0
+        assert report["retrieval_stage_latency_ms_avg"]["rerank"] == 1000.0
+
+    def test_ignores_items_with_no_retrieval_trace(self):
+        """A code_explainer/architecture_advisor/none item has
+        retrieval_trace=None - it must be excluded from the average, not
+        treated as a 0ms sub-stage."""
+        results = [
+            make_result(retrieval_trace=make_retrieval_trace(vector_search_ms=100.0)),
+            make_result(retrieval_trace=None),
+        ]
+
+        report = build_baseline_report(results)
+
+        assert report["retrieval_stage_latency_ms_avg"]["vector_search"] == 100.0
+
+    def test_no_doc_retriever_items_reports_none_not_zero(self):
+        """An "all code_explainer" batch has zero retrieval traces -
+        reporting 0ms here would misleadingly claim retrieval was
+        instant, rather than "never measured in this batch"."""
+        results = [make_result(retrieval_trace=None)]
+
+        report = build_baseline_report(results)
+
+        assert report["retrieval_stage_latency_ms_avg"]["vector_search"] is None
+        assert report["retrieval_stage_latency_ms_avg"]["keyword_search"] is None
+        assert report["retrieval_stage_latency_ms_avg"]["merge"] is None
+        assert report["retrieval_stage_latency_ms_avg"]["rerank"] is None
+
+    def test_empty_results_list_reports_none_without_raising(self):
+        report = build_baseline_report([])
+
+        assert report["retrieval_stage_latency_ms_avg"]["vector_search"] is None
+
+    def test_ignores_a_sub_stage_timing_that_was_never_measured_on_an_individual_item(self):
+        """An older trace (pre-Session-2a) or a trace where one sub-stage
+        timing is None must not break the average or coerce to 0ms for
+        that item - its contribution to that specific sub-stage is simply
+        excluded, same as the overall-duration None-skipping convention."""
+        results = [
+            make_result(retrieval_trace=make_retrieval_trace(vector_search_ms=None)),
+            make_result(retrieval_trace=make_retrieval_trace(vector_search_ms=200.0)),
+        ]
+
+        report = build_baseline_report(results)
+
+        assert report["retrieval_stage_latency_ms_avg"]["vector_search"] == 200.0
 
 
 @pytest.mark.unit
