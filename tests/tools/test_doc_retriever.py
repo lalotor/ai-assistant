@@ -110,12 +110,18 @@ class TestDocRetrieverLlmUsage:
     """
 
     def test_reports_one_llm_call_and_its_token_usage(self, mocker):
+        """Uses >3 merged results so reranking isn't skipped by the Session
+        2b trivial-set optimization (see TestDocRetrieverSkipsTrivialReranking
+        for the <=3 case, where llm_calls is 0)."""
         from app.tools.doc_retriever import doc_retriever
 
         mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
         mocker.patch(
             "app.tools.doc_retriever.retrieve_context",
-            return_value=[{"content": "chunk", "source": "a.md", "file_type": ".md", "score": 0.1, "search_type": "similarity"}],
+            return_value=[
+                {"content": f"chunk{i}", "source": f"{i}.md", "file_type": ".md", "score": 0.1, "search_type": "similarity"}
+                for i in range(4)
+            ],
         )
         mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
         mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
@@ -133,13 +139,41 @@ class TestDocRetrieverLlmUsage:
         assert result.llm_calls == 1
         assert result.token_usage == {"input_tokens": 300, "output_tokens": 10, "model": "gpt-5.4-mini"}
 
-    def test_reports_llm_calls_and_none_usage_on_the_no_relevant_docs_fallback(self, mocker):
-        """The reranking LLM call still happens even when it returns no
-        usable indexes - llm_calls must be 1, not 0, on this path too."""
+    def test_reports_zero_llm_calls_on_the_no_relevant_docs_fallback_when_input_is_trivial(self, mocker):
+        """Week 9 Session 2b: an empty merged set (0 <= 3) now skips the
+        rerank LLM call entirely rather than calling it just to get no
+        indexes back - llm_calls is 0, not 1, on this path."""
         from app.tools.doc_retriever import doc_retriever
 
         mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
         mocker.patch("app.tools.doc_retriever.retrieve_context", return_value=[])
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
+        fake_llm = mocker.Mock()
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="unmatched query"))
+
+        fake_llm.invoke.assert_not_called()
+        assert result.llm_calls == 0
+        assert result.token_usage is None
+
+    def test_reports_one_llm_call_on_the_no_relevant_docs_fallback_when_reranking_still_ran(self, mocker):
+        """A >3-result merged set that the reranker still rejects entirely
+        (returns no usable indexes) is a different path from the trivial-
+        skip case above - the LLM call did happen here, so llm_calls must
+        be 1, not 0."""
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch(
+            "app.tools.doc_retriever.retrieve_context",
+            return_value=[
+                {"content": f"chunk{i}", "source": f"{i}.md", "file_type": ".md", "score": 0.1, "search_type": "similarity"}
+                for i in range(4)
+            ],
+        )
         mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
         mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
         fake_llm = mocker.Mock()
@@ -151,6 +185,114 @@ class TestDocRetrieverLlmUsage:
 
         assert result.llm_calls == 1
         assert result.token_usage is None
+
+
+@pytest.mark.unit
+class TestDocRetrieverSkipsTrivialReranking:
+    """Week 9 Session 2b: when the merged candidate set is small enough
+    (<=3) that the reranker has nothing meaningful to choose between, the
+    LLM rerank call is skipped entirely - it's pure latency overhead on a
+    set this reranking prompt's own "best 3" instruction would just
+    return in full anyway. Not a quality trade-off: there's nothing to
+    rank away."""
+
+    def test_skips_the_llm_call_when_merged_results_are_three_or_fewer(self, mocker):
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch(
+            "app.tools.doc_retriever.retrieve_context",
+            return_value=[
+                {"content": "chunk1", "source": "a.md", "file_type": ".md", "score": 0.1, "search_type": "similarity"},
+                {"content": "chunk2", "source": "b.md", "file_type": ".md", "score": 0.2, "search_type": "similarity"},
+            ],
+        )
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
+        fake_llm = mocker.Mock()
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="what is X?"))
+
+        fake_llm.invoke.assert_not_called()
+        assert result.llm_calls == 0
+        assert result.token_usage is None
+
+    def test_returns_all_merged_results_and_sources_unranked_when_skipped(self, mocker):
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch(
+            "app.tools.doc_retriever.retrieve_context",
+            return_value=[
+                {"content": "chunk1", "source": "a.md", "file_type": ".md", "score": 0.1, "search_type": "similarity"},
+            ],
+        )
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch(
+            "app.tools.doc_retriever.keyword_search",
+            return_value=[
+                {"content": "chunk2", "source": "b.md", "file_type": ".md", "score": 1, "search_type": "keyword"},
+            ],
+        )
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=mocker.Mock())
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="what is X?"))
+
+        assert "chunk1" in result.context
+        assert "chunk2" in result.context
+        assert set(result.sources) == {"a.md", "b.md"}
+        assert result.retrieval_trace.reranked_count == 2
+        assert result.retrieval_trace.final_sources == ["a.md", "b.md"] or set(result.retrieval_trace.final_sources) == {"a.md", "b.md"}
+
+    def test_still_records_a_near_zero_rerank_ms_not_none_when_skipped(self, mocker):
+        """rerank_ms records that the stage was evaluated (and took ~0ms
+        by design), not that it was never measured - None is reserved for
+        \"this trace predates sub-stage timing\" (Session 2a convention),
+        not \"this call skipped the LLM\"."""
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch("app.tools.doc_retriever.retrieve_context", return_value=[
+            {"content": "chunk1", "source": "a.md", "file_type": ".md", "score": 0.1, "search_type": "similarity"},
+        ])
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=mocker.Mock())
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="what is X?"))
+
+        assert result.retrieval_trace.rerank_ms is not None
+        assert result.retrieval_trace.rerank_ms < 5  # effectively instant, no LLM round trip
+
+    def test_does_not_skip_reranking_when_merged_results_exceed_the_threshold(self, mocker):
+        """Regression guard: the normal (>3 results) reranking path from
+        Session 2a must be unaffected by this optimization."""
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch(
+            "app.tools.doc_retriever.retrieve_context",
+            return_value=[
+                {"content": f"chunk{i}", "source": f"{i}.md", "file_type": ".md", "score": 0.1, "search_type": "similarity"}
+                for i in range(4)
+            ],
+        )
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
+        fake_llm = mocker.Mock()
+        fake_llm.model_name = "gpt-5.4-mini"
+        fake_llm.invoke.return_value = mocker.Mock(content="0,1", usage_metadata=None)
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="what is X?"))
+
+        fake_llm.invoke.assert_called_once()
+        assert result.llm_calls == 1
 
 
 @pytest.mark.unit

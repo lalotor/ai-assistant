@@ -34,6 +34,10 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
 
     results = _hybrid_retrieve(doc_input.query, retrieval_trace)
     reranked_results, sources, token_usage = _rerank_results(doc_input.query, results, retrieval_trace)
+    # Week 9 Session 2b: reranking is skipped (llm_calls=0) when the merged
+    # set was <= _TRIVIAL_RERANK_THRESHOLD; otherwise the LLM call always
+    # happened (llm_calls=1), whether or not it returned usable indexes.
+    llm_calls = 0 if len(results) <= _TRIVIAL_RERANK_THRESHOLD else 1
     if not reranked_results:
         logger.info(
             "no_relevant_documents_found",
@@ -44,7 +48,7 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
             context="No relevant documentation found for this query. The question may be outside the scope of available technical documentation.",
             sources=[],
             retrieval_trace=retrieval_trace,
-            llm_calls=1,
+            llm_calls=llm_calls,
             token_usage=token_usage,
         )
 
@@ -62,7 +66,7 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
         context=context,
         sources=sources,
         retrieval_trace=retrieval_trace,
-        llm_calls=1,
+        llm_calls=llm_calls,
         token_usage=token_usage,
     )
 
@@ -127,18 +131,40 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
     return combined
 
 
+# Below this many merged candidates, the LLM reranker has nothing
+# meaningful to choose between - its own prompt instructs it to return
+# the "best 3" anyway, so a set this small would just come back
+# unchanged. Week 9 Session 2b: skip the LLM call entirely in that case,
+# since it's pure latency overhead with zero quality trade-off (there's
+# nothing to rank away, unlike skipping reranking on a large set would be).
+_TRIVIAL_RERANK_THRESHOLD = 3
+
+
 def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalTrace) -> tuple[list[dict], list[str], dict | None]:
     """Uses the LLM to rerank retrieved results based on relevance to the query.
 
-    This is doc_retriever's only LLM call (Week 9: reported via
-    DocOutput.llm_calls=1 by the caller), distinct from the Planner's
-    tool-selection call and the Reviewer's review call - a Worker
-    dispatching to doc_retriever makes 1 LLM call here, not 0, even
-    though worker_node itself never calls an LLM directly. Confirmed live
-    (evaluation smoke run, 2026-09-27): doc_retriever always reports
-    exactly 1 LLM call, since reranking is its only LLM-calling step.
+    This is doc_retriever's only possible LLM call (Week 9 Session 1:
+    reported via DocOutput.llm_calls by the caller), distinct from the
+    Planner's tool-selection call and the Reviewer's review call - a
+    Worker dispatching to doc_retriever makes at most 1 LLM call here,
+    even though worker_node itself never calls an LLM directly. Week 9
+    Session 2b: "at most", not "always exactly" 1 - see
+    _TRIVIAL_RERANK_THRESHOLD; a call with <= that many merged results
+    makes 0 LLM calls, since there's nothing to rerank.
     """
     rerank_started = datetime.now()
+
+    if len(results) <= _TRIVIAL_RERANK_THRESHOLD:
+        final_sources = list(set(r['source'] for r in results))
+        retrieval_trace.rerank_ms = calculate_duration_ms(rerank_started, datetime.now())
+        retrieval_trace.reranked_count = len(results)
+        retrieval_trace.final_sources = final_sources
+        logger.info(
+            "hybrid_stage_reranked_skipped_trivial",
+            input_count=len(results),
+            final_sources=final_sources,
+        )
+        return results, final_sources, None
 
     llm = get_llm()
 
