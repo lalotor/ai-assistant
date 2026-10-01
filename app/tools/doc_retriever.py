@@ -74,8 +74,10 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
     for keyword search instead of reloading and re-chunking documents from
     disk on every call.
     """
+    vector_started = datetime.now()
     vector_store = get_vector_store()
     vector_results = retrieve_context(vector_store, query, k=10)
+    retrieval_trace.vector_search_ms = calculate_duration_ms(vector_started, datetime.now())
     logger.info(
         "hybrid_stage_vector",
         count=len(vector_results),
@@ -84,11 +86,13 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
 
     retrieval_trace.vector_results_count = len(vector_results)
 
+    keyword_started = datetime.now()
     all_chunks = get_cached_chunks()
     keyword_results = keyword_search(
         all_chunks,
         query
     )
+    retrieval_trace.keyword_search_ms = calculate_duration_ms(keyword_started, datetime.now())
     logger.info(
         "hybrid_stage_keyword",
         count=len(keyword_results),
@@ -97,6 +101,7 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
 
     retrieval_trace.keyword_results_count = len(keyword_results)
 
+    merge_started = datetime.now()
     combined = []
     seen = set()
 
@@ -109,6 +114,7 @@ def _hybrid_retrieve(query: str, retrieval_trace: RetrievalTrace) -> list[dict]:
             combined.append(result)
             seen.add(content)
 
+    retrieval_trace.merge_ms = calculate_duration_ms(merge_started, datetime.now())
     logger.info(
         "hybrid_stage_merged",
         total_count=len(combined),
@@ -132,6 +138,8 @@ def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalT
     (evaluation smoke run, 2026-09-27): doc_retriever always reports
     exactly 1 LLM call, since reranking is its only LLM-calling step.
     """
+    rerank_started = datetime.now()
+
     llm = get_llm()
 
     joined_chunks = _join_results(results)
@@ -147,6 +155,8 @@ def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalT
     indexes = _parse_indexes(response.content, len(results))
     reranked_results = [results[i] for i in indexes]
     final_sources = list(set(r['source'] for r in reranked_results))
+
+    retrieval_trace.rerank_ms = calculate_duration_ms(rerank_started, datetime.now())
 
     logger.info(
         "hybrid_stage_reranked",

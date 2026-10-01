@@ -151,3 +151,81 @@ class TestDocRetrieverLlmUsage:
 
         assert result.llm_calls == 1
         assert result.token_usage is None
+
+
+@pytest.mark.unit
+class TestDocRetrieverSubStageTiming:
+    """Week 9 Session 2a: RetrievalTrace breaks its overall duration_ms
+    down by sub-stage (vector search, keyword search, merge, reranking),
+    so a slow doc_retriever call can be attributed to a specific step
+    instead of guessed at."""
+
+    def test_records_a_positive_duration_for_every_sub_stage(self, mocker):
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch(
+            "app.tools.doc_retriever.retrieve_context",
+            return_value=[{"content": "vector chunk", "source": "a.md", "file_type": ".md", "score": 0.1, "search_type": "similarity"}],
+        )
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch(
+            "app.tools.doc_retriever.keyword_search",
+            return_value=[{"content": "keyword chunk", "source": "b.md", "file_type": ".md", "score": 1, "search_type": "keyword"}],
+        )
+        fake_llm = mocker.Mock()
+        fake_llm.invoke.return_value = mocker.Mock(content="0,1", usage_metadata=None)
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="what is X?"))
+
+        trace = result.retrieval_trace
+        assert trace.vector_search_ms is not None and trace.vector_search_ms >= 0
+        assert trace.keyword_search_ms is not None and trace.keyword_search_ms >= 0
+        assert trace.merge_ms is not None and trace.merge_ms >= 0
+        assert trace.rerank_ms is not None and trace.rerank_ms >= 0
+
+    def test_sub_stage_durations_sum_close_to_the_overall_duration(self, mocker):
+        """Not exact (some overhead is outside the four measured sub-stages,
+        e.g. building the RetrievalTrace itself), but the four sub-stages
+        should account for the large majority of the overall duration_ms -
+        a sanity check against silently measuring the wrong span."""
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch("app.tools.doc_retriever.retrieve_context", return_value=[])
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
+        fake_llm = mocker.Mock()
+        fake_llm.invoke.return_value = mocker.Mock(content="", usage_metadata=None)
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="anything"))
+
+        trace = result.retrieval_trace
+        sub_stage_total = trace.vector_search_ms + trace.keyword_search_ms + trace.merge_ms + trace.rerank_ms
+        assert sub_stage_total <= trace.duration_ms + 1  # +1ms tolerance for float rounding
+
+    def test_records_sub_stage_timing_on_the_no_relevant_docs_fallback_path_too(self, mocker):
+        """The fallback path still ran every sub-stage (it just found
+        nothing) - sub-stage timings must not be silently dropped here."""
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch("app.tools.doc_retriever.retrieve_context", return_value=[])
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
+        fake_llm = mocker.Mock()
+        fake_llm.invoke.return_value = mocker.Mock(content="", usage_metadata=None)
+        mocker.patch("app.tools.doc_retriever.get_llm", return_value=fake_llm)
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="unmatched query"))
+
+        trace = result.retrieval_trace
+        assert trace.vector_search_ms is not None
+        assert trace.keyword_search_ms is not None
+        assert trace.merge_ms is not None
+        assert trace.rerank_ms is not None

@@ -38,7 +38,16 @@ class StageEvent:
 
 @dataclass
 class RetrievalTrace:
-    """Traces the retrieval pipeline: vector search → keyword search → reranking."""
+    """Traces the retrieval pipeline: vector search → keyword search → merge → reranking.
+
+    Week 9 Session 2a: vector_search_ms/keyword_search_ms/merge_ms/
+    rerank_ms break duration_ms (the whole call's total) down by
+    sub-stage, so a slow doc_retriever call can be attributed to a
+    specific step instead of guessed at. Each defaults to None, not 0,
+    when its stage was never measured (e.g. an older trace, or a stage
+    that never ran) - 0 would falsely claim "this stage took no time"
+    instead of "this stage's time is unknown".
+    """
     query: str
     vector_results_count: Optional[int] = None
     keyword_results_count: Optional[int] = None
@@ -46,6 +55,10 @@ class RetrievalTrace:
     reranked_count: Optional[int] = None
     final_sources: Optional[list[str]] = None
     duration_ms: Optional[float] = None
+    vector_search_ms: Optional[float] = None
+    keyword_search_ms: Optional[float] = None
+    merge_ms: Optional[float] = None
+    rerank_ms: Optional[float] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "RetrievalTrace":
