@@ -94,6 +94,7 @@ class ExecutionTrace:
     retrieval_trace: RetrievalTrace
 
     final_answer: str
+    outcome: Literal["success", "recovered", "degraded", "failed"] = "success"
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serializable dictionary with datetime fields as ISO 8601 strings."""

@@ -55,6 +55,15 @@ def build_execution_trace(state: dict) -> ExecutionTrace:
         if planner_event.started_at is not None and reviewer_event.ended_at is not None
         else None
     )
+    retrieval_trace = state.get("retrieval_trace")
+    retrieved_sources = state.get("retrieved_sources")
+    degraded = bool(_trace_value(retrieval_trace, "fallback_used"))
+    if (
+        retrieval_trace is not None
+        and state.get("selected_tool") == "doc_retriever"
+        and not retrieved_sources
+    ):
+        degraded = True
 
     return ExecutionTrace(
         trace_id=state["trace_id"],
@@ -64,9 +73,16 @@ def build_execution_trace(state: dict) -> ExecutionTrace:
         planner_events=[planner_event],
         worker_events=[worker_event],
         reviewer_events=[reviewer_event],
-        retrieval_trace=state.get("retrieval_trace", None),
+        retrieval_trace=retrieval_trace,
         final_answer=state.get("final_answer", ""),
+        outcome="degraded" if degraded else "success",
     )
+
+
+def _trace_value(retrieval_trace: object, field: str) -> object:
+    if isinstance(retrieval_trace, dict):
+        return retrieval_trace.get(field)
+    return getattr(retrieval_trace, field, None)
 
 
 def _build_stage_event(

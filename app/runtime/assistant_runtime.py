@@ -1,9 +1,11 @@
 import uuid
+import openai
 import structlog
 from dotenv import load_dotenv
 
 from app.contracts.response import QueryResponse
 from app.contracts.agent import AgentState
+from app.contracts.retrieval import RetrievalUnavailableError
 from app.tracing import build_execution_trace
 
 logger = structlog.get_logger(__name__)
@@ -125,11 +127,18 @@ class AssistantRuntime:
                 trace_id=trace.trace_id
             )
         except Exception as e:
+            if isinstance(e, RetrievalUnavailableError):
+                failure_category = "retrieval_unavailable"
+            elif isinstance(e, (TimeoutError, openai.APITimeoutError)):
+                failure_category = "operation_timeout"
+            else:
+                failure_category = "workflow_execution_error"
             logger.error(
                 "workflow_execution_failed",
-                error=str(e),
+                trace_id=trace_id,
+                outcome="failed",
+                failure_category=failure_category,
                 error_type=type(e).__name__,
-                exc_info=True
             )
             raise
 

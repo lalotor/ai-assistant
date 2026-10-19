@@ -62,7 +62,7 @@ _Avoid_: Citations, References
 ### Tracing & Observability
 
 **Execution Trace**:
-The complete record of a single question's run across the Planner, Worker, and Reviewer stages, keyed by Trace ID. Contains a nested Retrieval Trace when the Doc Retriever was used.
+The complete record of a single completed question's run across the Planner, Worker, and Reviewer stages, keyed by Trace ID. Includes an outcome (`success`, `recovered`, or `degraded`) and a nested Retrieval Trace when the Doc Retriever was used. Terminal failures are logged at the workflow boundary with `outcome=failed`; the SDK's internal retry recoveries are not yet observable.
 _Avoid_: Run Log, Execution Record
 
 **Retrieval Trace**:

@@ -7,8 +7,11 @@ side effects at module load time", so each is mocked at its own
 defining module, not at assistant_runtime's import site.
 """
 import pytest
+import httpx
+import openai
 
 from app.contracts.agent import AgentState
+from app.contracts.retrieval import RetrievalUnavailableError
 from app.runtime.assistant_runtime import AssistantRuntime
 
 
@@ -121,6 +124,53 @@ class TestAssistantRuntimeRunQuestion:
         runtime._is_initialized = True
         runtime.graph = mocker.Mock()
         runtime.graph.invoke.side_effect = RuntimeError("graph exploded")
+        error_log = mocker.patch("app.runtime.assistant_runtime.logger.error")
 
         with pytest.raises(RuntimeError, match="graph exploded"):
             runtime.run_question("hello", trace_id="t-1")
+
+        error_log.assert_called_once_with(
+            "workflow_execution_failed",
+            trace_id="t-1",
+            outcome="failed",
+            failure_category="workflow_execution_error",
+            error_type="RuntimeError",
+        )
+
+    def test_logs_total_retrieval_failure_as_failed(self, mocker):
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.side_effect = RetrievalUnavailableError("private provider details")
+        error_log = mocker.patch("app.runtime.assistant_runtime.logger.error")
+
+        with pytest.raises(RetrievalUnavailableError):
+            runtime.run_question("hello", trace_id="t-2")
+
+        error_log.assert_called_once_with(
+            "workflow_execution_failed",
+            trace_id="t-2",
+            outcome="failed",
+            failure_category="retrieval_unavailable",
+            error_type="RetrievalUnavailableError",
+        )
+
+    def test_logs_provider_timeout_as_operation_timeout(self, mocker):
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.side_effect = openai.APITimeoutError(
+            request=httpx.Request("POST", "https://provider.test")
+        )
+        error_log = mocker.patch("app.runtime.assistant_runtime.logger.error")
+
+        with pytest.raises(openai.APITimeoutError):
+            runtime.run_question("hello", trace_id="t-3")
+
+        error_log.assert_called_once_with(
+            "workflow_execution_failed",
+            trace_id="t-3",
+            outcome="failed",
+            failure_category="operation_timeout",
+            error_type="APITimeoutError",
+        )

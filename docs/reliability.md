@@ -64,10 +64,24 @@ Final Answer.
 ## Trace and response consistency
 
 Execution outcomes are `success`, `recovered`, `degraded`, or `failed`, as
-defined above. Traces should identify the failing stage or dependency, a
-structured failure category, retry count, fallback use, and final outcome when
-known. Retrieval traces should distinguish a strategy error from a successful
-search with zero results and preserve provenance for every returned source.
+defined above. Record a structured failure category, retry count, and failing
+stage when those facts are observable; record fallback use and final outcome
+for completed workflows. Retrieval traces distinguish a strategy error from a
+successful search with zero results and preserve provenance for every
+returned source.
+
+Successful Execution Traces classify normal completion as `success` and
+retrieval fallback or no-source abstention as `degraded`. Terminal runtime
+failures retain the existing exception/API failure path and are logged with
+`outcome=failed` and a structured failure category; no successful Execution
+Trace is fabricated for a failed graph invocation. The configured provider
+SDK retries internally but does not currently expose retry attempts to the
+runtime, so a `recovered` outcome is not emitted until recovery can be
+observed reliably.
+
+The current failed-run event identifies the failure at the workflow boundary;
+the graph does not return partial state when a node raises, so the failing
+stage and its partial timings are not yet available in that event.
 
 Do not put raw prompts, document contents, credentials, or unfiltered provider
 exception text into routine telemetry. Successful and degraded answers retain
@@ -75,11 +89,45 @@ the existing response shape unless a schema change is separately designed;
 terminal failures use the existing API/CLI failure path and must not be
 represented as successful answers.
 
+## Evaluation snapshot
+
+Three full runs of the same 11-question dataset were completed on 2026-10-19
+(33 evaluations total). Results are aggregated in
+[reliability_eng.md](../evaluation/reports/reliability_eng.md) and
+[reliability_eng.json](../evaluation/reports/reliability_eng.json); raw runs
+remain under the ignored `evaluation/results/` directory. The Week 9 optimized
+report is unchanged.
+
+| Metric | Week 9 optimized (33 evals) | Reliability engineering (33 evals) |
+|---|---:|---:|
+| Average answer score | 0.6734 | 0.6212 |
+| Average retrieval/source score | 0.4740 | 0.4192 |
+| Average latency | 8,478.5 ms | 8,308.4 ms |
+| P95 latency | 20,130.2 ms | 18,568.8 ms |
+| Average tokens per question | 3,811.2 | 3,864.0 |
+| Total LLM calls | 96 | 99 |
+
+In the three reliability runs, 23 evaluations passed and 10 failed; there
+were no errors or timeouts. Across the failures, categories were
+`hallucination` (5), `retrieval_failure` (3), and `slow_execution` (2).
+Compared with the optimized report, answer score decreased by 0.0522 and
+retrieval/source score by 0.0548; average latency improved by about 2.0% and
+p95 by about 7.8%, while average tokens rose by about 1.4%. The sample sizes
+now match, but these are separate live LLM runs, not deterministic paired
+measurements; quality and latency differences cannot be attributed solely to
+the reliability changes.
+
+The earlier single 11-question run is superseded for comparison purposes by
+these three runs. Individual output and failure classifications vary between
+repetitions, as expected for live model evaluations.
+
 ## Decisions to confirm during implementation
 
-- Define the exact structured failure categories and how a failed run is
-  represented in traces, since the current trace is assembled only after a
-  successful graph invocation.
+- Extend failed-run observability to include the failing graph stage and
+  partial timing when LangGraph exposes that state without masking the original
+  exception.
+- Expose provider retry attempts if the SDK offers a stable hook, then emit
+  `recovered` only when at least one retry actually occurred and succeeded.
 - Define and test the minimum evidence-sufficiency rule for returning a
   qualified answer versus abstaining. Currently, deterministic abstention
   covers the no-source case; source presence alone is not a sufficiency rule.
