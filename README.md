@@ -244,47 +244,50 @@ Focus:
 
 ---
 
-## Week 10 — Long-Running Workflows
+## Week 10 — Reliability Engineering
 
-Add support for:
-- persistent execution state
-- resumable workflows
-- multi-step task execution
+Introduce:
+- bounded, selective retries
+- operation timeouts and execution budgets
+- retrieval fallbacks and graceful degradation
+- explicit terminal failure and abstention behavior
+- failure-injection tests and recovery telemetry
 
-Focus:
-- workflow durability
-- state management
-- replayable execution
+**Focus:**
+- predictable failure handling
+- resilience without silent quality degradation
+- latency, cost, and correctness trade-offs
 
----
+## Week 11 — Controlled Reflection + Revision
 
-## Week 11 — Reflection + Self-Improvement
+Introduce:
+- structured reviewer decisions
+- explicit answer-quality criteria
+- bounded critique-and-revision
+- revision budgets and stopping conditions
+- evaluation of single-pass vs. revised answers
 
-Implement controlled reflection:
-- critique stage
-- bounded revisions
-- deterministic refinement
+**Focus:**
+- evidence-grounded refinement
+- controlled iterative orchestration
+- measurable quality improvements
 
-Focus:
-- structured self-evaluation
-- safe iterative improvement
-- orchestration discipline
+## Week 12 — Final Integration + Production Readiness
 
----
-
-## Week 12 — Final System Integration
-
-Integrate:
+Integrate and validate:
 - multi-agent orchestration
-- advanced RAG
-- evaluation
-- observability
-- API runtime
-- execution tracing
+- hybrid RAG and source attribution
+- evaluation and regression testing
+- execution tracing and telemetry
+- API runtime and failure handling
+- performance and token-cost analysis
+- architecture and operational documentation
 
-Final goal:
+**Final goal:**
 
-> A production-minded AI orchestration system resembling internal engineering copilots and enterprise AI assistants.
+A production-minded AI orchestration system resembling an internal engineering copilot, with measurable quality, observable execution, bounded recovery behavior, and a reproducible demonstration.
+
+**Stretch goal, only if justified:** persistent checkpoints and resumable long-running workflows for tasks that genuinely need to survive process restarts or wait for external events.
 
 ---
 
