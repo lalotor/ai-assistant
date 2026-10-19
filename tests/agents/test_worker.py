@@ -12,6 +12,7 @@ import pytest
 
 from app.agents.worker import worker_node
 from app.contracts.agent import AgentState
+from app.contracts.retrieval import RetrievalUnavailableError
 from app.contracts.trace import RetrievalTrace
 
 
@@ -107,6 +108,20 @@ class TestWorkerNodeDispatch:
 
         assert "Error" in result.tool_output
         assert "boom" in result.tool_output
+
+    def test_retrieval_unavailable_error_propagates_without_creating_reviewable_draft(self, mocker):
+        mocker.patch(
+            "app.agents.worker.TOOLS",
+            {"doc_retriever": {"invoke": mocker.Mock(
+                side_effect=RetrievalUnavailableError("Both retrieval strategies failed.")
+            )}},
+        )
+        state = make_state("doc_retriever", tool_input={"query": "x"})
+
+        with pytest.raises(RetrievalUnavailableError):
+            worker_node(state)
+
+        assert state.draft_answer is None
 
     def test_records_stage_timings(self, mocker):
         mocker.patch(

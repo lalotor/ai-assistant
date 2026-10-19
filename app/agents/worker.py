@@ -2,6 +2,7 @@ from datetime import datetime
 import structlog
 from app.tools.registry import TOOLS
 from app.contracts.agent import AgentState
+from app.contracts.retrieval import RetrievalUnavailableError
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -48,6 +49,13 @@ def worker_node(state: AgentState) -> AgentState:
             # that predate Week 9's llm_calls/token_usage keys.
             llm_calls = outcome.get("llm_calls", 0)
             token_usage = outcome.get("token_usage")
+        except RetrievalUnavailableError:
+            logger.error(
+                "tool_execution_failed",
+                selected_tool=state.selected_tool,
+                failure_category="retrieval_unavailable",
+            )
+            raise
         except Exception as e:
             logger.error(
                 "tool_execution_failed",

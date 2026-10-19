@@ -15,6 +15,119 @@ from app.contracts.tools import DocInput
 
 @pytest.mark.unit
 class TestDocRetriever:
+    def test_vector_failure_falls_back_to_keyword_evidence_and_records_degraded_path(self, mocker):
+        from app.tools.doc_retriever import doc_retriever
+
+        vector_store = mocker.Mock()
+        vector_store.similarity_search_with_score.side_effect = RuntimeError("vector index unavailable")
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=vector_store)
+        mocker.patch(
+            "app.tools.doc_retriever.get_cached_chunks",
+            return_value=[
+                Document(
+                    page_content="The payment retry policy allows three attempts.",
+                    metadata={"source": "reliability.md", "file_type": ".md"},
+                )
+            ],
+        )
+        llm = mocker.patch("app.tools.doc_retriever.get_llm")
+
+        result = doc_retriever(DocInput(query="payment retry policy"))
+
+        assert "The payment retry policy allows three attempts." in result.context
+        assert "reliability.md" in result.sources
+        assert "vector retrieval failed" in result.context.lower()
+        assert result.retrieval_trace.vector_search_status == "failed"
+        assert result.retrieval_trace.vector_search_error_type == "RuntimeError"
+        assert result.retrieval_trace.keyword_search_status == "succeeded"
+        assert result.retrieval_trace.fallback_used is True
+        llm.assert_not_called()
+
+    def test_keyword_failure_falls_back_to_vector_evidence_and_records_degraded_path(self, mocker):
+        from app.tools.doc_retriever import doc_retriever
+
+        vector_store = mocker.Mock()
+        vector_store.similarity_search_with_score.return_value = [
+            (
+                Document(
+                    page_content="The vector-backed policy permits three retry attempts.",
+                    metadata={"source": "vector-policy.md", "file_type": ".md"},
+                ),
+                0.2,
+            )
+        ]
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=vector_store)
+        mocker.patch(
+            "app.tools.doc_retriever.get_cached_chunks",
+            side_effect=OSError("chunk cache unavailable"),
+        )
+        llm = mocker.patch("app.tools.doc_retriever.get_llm")
+
+        result = doc_retriever(DocInput(query="retry attempts"))
+
+        assert "The vector-backed policy permits three retry attempts." in result.context
+        assert "vector-policy.md" in result.sources
+        assert "keyword retrieval failed" in result.context.lower()
+        assert result.retrieval_trace.vector_search_status == "succeeded"
+        assert result.retrieval_trace.keyword_search_status == "failed"
+        assert result.retrieval_trace.keyword_search_error_type == "OSError"
+        assert result.retrieval_trace.fallback_used is True
+        llm.assert_not_called()
+
+    def test_both_retrieval_strategies_failing_raises_explicit_error(self, mocker):
+        from app.contracts.retrieval import RetrievalUnavailableError
+        from app.tools.doc_retriever import doc_retriever
+
+        mocker.patch(
+            "app.tools.doc_retriever.get_vector_store",
+            side_effect=OSError("vector store unavailable"),
+        )
+        mocker.patch(
+            "app.tools.doc_retriever.get_cached_chunks",
+            side_effect=OSError("chunk cache unavailable"),
+        )
+
+        with pytest.raises(
+            RetrievalUnavailableError,
+            match="Both vector and keyword retrieval strategies failed",
+        ):
+            doc_retriever(DocInput(query="retry attempts"))
+
+    def test_reranker_failure_preserves_candidates_and_records_degraded_path(self, mocker):
+        from app.tools.doc_retriever import doc_retriever
+
+        vector_results = [
+            {
+                "content": f"policy evidence {index}",
+                "source": f"policy-{index}.md",
+                "file_type": ".md",
+                "score": 0.1,
+                "search_type": "similarity",
+            }
+            for index in range(4)
+        ]
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch("app.tools.doc_retriever.retrieve_context", return_value=vector_results)
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+        mocker.patch("app.tools.doc_retriever.keyword_search", return_value=[])
+        mocker.patch(
+            "app.tools.doc_retriever.get_llm",
+            return_value=mocker.Mock(
+                invoke=mocker.Mock(side_effect=TimeoutError("reranker timed out")),
+            ),
+        )
+        mocker.patch("app.tools.doc_retriever.format_prompt", return_value="prompt")
+
+        result = doc_retriever(DocInput(query="policy evidence"))
+
+        assert "policy evidence 0" in result.context
+        assert "policy evidence 3" in result.context
+        assert set(result.sources) == {f"policy-{index}.md" for index in range(4)}
+        assert "reranking failed" in result.context.lower()
+        assert result.retrieval_trace.rerank_status == "fallback"
+        assert result.retrieval_trace.rerank_error_type == "TimeoutError"
+        assert result.retrieval_trace.fallback_used is True
+
     def test_returns_context_and_sources_from_reranked_results(self, mocker):
         from app.tools.doc_retriever import doc_retriever
 
@@ -119,6 +232,11 @@ class TestDocRetriever:
         # returning gracefully.
         assert result.retrieval_trace is not None
         assert result.retrieval_trace.query == "unmatched query"
+        assert result.retrieval_trace.vector_search_status == "succeeded"
+        assert result.retrieval_trace.vector_results_count == 0
+        assert result.retrieval_trace.keyword_search_status == "succeeded"
+        assert result.retrieval_trace.keyword_results_count == 0
+        assert result.retrieval_trace.fallback_used is False
 
 
 @pytest.mark.unit

@@ -31,6 +31,7 @@ def make_state(**overrides) -> AgentState:
         user_input="what is X?",
         draft_answer="Tool result:\nsome context",
         selected_tool="doc_retriever",
+        retrieved_sources=["source.md"],
         trace_id="trace-1",
     )
     defaults.update(overrides)
@@ -48,6 +49,17 @@ class TestReviewerNode:
 
         assert result.final_answer == "X is ..."
         assert result.review_feedback == "clear and grounded"
+
+    def test_abstains_without_calling_llm_when_doc_retriever_returns_no_sources(self, mocker):
+        get_llm = mocker.patch("app.agents.reviewer.get_llm")
+        state = make_state(draft_answer="Tool result:\nNo relevant documentation found.", retrieved_sources=[])
+
+        result = reviewer_node(state)
+
+        assert result.final_answer == "I couldn't find relevant documentation to support an answer to this question."
+        assert result.review_feedback == "No retrieved sources were available; abstained to avoid an unsupported answer."
+        get_llm.assert_not_called()
+        assert result.stage_llm_usage["reviewer"] == {"llm_calls": 0, "token_usage": None}
 
     def test_records_stage_timing(self, mocker):
         mock_llm = make_structured_llm(mocker)

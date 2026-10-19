@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from dataclasses import asdict, dataclass, fields
 
 from app.utils.util import serialize_value
@@ -63,6 +63,13 @@ class RetrievalTrace:
     keyword_search_ms: Optional[float] = None
     merge_ms: Optional[float] = None
     rerank_ms: Optional[float] = None
+    vector_search_status: Optional[Literal["succeeded", "failed"]] = None
+    vector_search_error_type: Optional[str] = None
+    keyword_search_status: Optional[Literal["succeeded", "failed"]] = None
+    keyword_search_error_type: Optional[str] = None
+    rerank_status: Optional[Literal["skipped", "succeeded", "fallback"]] = None
+    rerank_error_type: Optional[str] = None
+    fallback_used: bool = False
 
     @classmethod
     def from_dict(cls, data: dict) -> "RetrievalTrace":

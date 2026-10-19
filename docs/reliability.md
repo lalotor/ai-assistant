@@ -29,7 +29,8 @@ Final Answer.
 | Vector retrieval | Search errors while keyword retrieval succeeds | Continue with keyword results. If usable evidence remains, return a qualified answer and mark execution degraded because one retrieval strategy was unavailable. | Return the answer with available sources and a clear limitation; if evidence is insufficient, abstain. | Record vector failure, keyword availability, fallback use, and available sources. |
 | Keyword retrieval | Search/cache errors while vector retrieval succeeds | Continue with vector results. If usable evidence remains, return a qualified answer and mark execution degraded because one retrieval strategy was unavailable. | Return the answer with available sources and a clear limitation; if evidence is insufficient, abstain. | Record keyword failure, vector availability, fallback use, and available sources. |
 | Vector and keyword retrieval | Both strategies fail | Do not rerun the entire graph or invent evidence. | Fail explicitly; no documentation-grounded answer is returned. | Record retrieval failure and both strategy outcomes. |
-| Retrieval | Both strategies complete but return no useful evidence, or available evidence is insufficient | Treat this as an evidence limitation, not a retrieval exception. Do not retry the same empty search blindly. | Return an explicit abstention/limitation, not a substantive unsupported answer; mark execution degraded. | Record successful empty/insufficient retrieval and the abstention outcome. |
+| Retrieval | Both strategies complete but return no sources | Treat this as an evidence limitation, not a retrieval exception. Do not retry the same empty search blindly. | The Reviewer returns a deterministic abstention without an LLM call. | Retrieval status distinguishes successful empty results from strategy failures; record the abstention outcome. |
+| Reviewer | Retrieved sources exist but may not sufficiently support an answer | Do not treat source presence alone as proof that evidence is sufficient. | The Reviewer assesses the evidence and must return an explicit limitation or abstention rather than an unsupported answer. | Record retrieval outcomes and available sources; a minimum evidence-sufficiency threshold remains to be defined. |
 | Reranker | Reranking call fails after candidate retrieval | Apply the LLM retry policy. If it is still unavailable but candidates exist, retain candidates in their existing deterministic merge order without claiming they were reranked; use them only if evidence is sufficient. | Return a qualified answer with available sources and mark execution degraded; otherwise abstain. | Record reranker failure, fallback use, and final sources. |
 | Worker tool | Unexpected tool failure not handled by a safe local fallback | Stop the workflow; do not turn exception text into draft content for the Reviewer. | Fail explicitly; the Reviewer must not convert an error message into an answer. | Record the Worker failure category and that no reviewed answer was produced. |
 | Reviewer | Provider error, invalid output, or timeout after a draft exists | Apply the LLM retry policy, then fail if review cannot complete. Never treat the unreviewed draft as the Final Answer. | Fail explicitly; do not return the draft as a successful or degraded answer. | Record Reviewer failure and that no Final Answer was produced. |
@@ -56,6 +57,9 @@ Final Answer.
 - Retrieval operations are read-only and may be retried only when the specific
   failure is transient and the request budget allows it. Do not repeat a
   successful empty search as though it were an error.
+- When Doc Retriever returns no sources, the Reviewer abstains deterministically
+  without invoking the LLM. The answer states that no relevant documentation
+  was found to support a response.
 
 ## Trace and response consistency
 
@@ -76,6 +80,6 @@ represented as successful answers.
 - Define the exact structured failure categories and how a failed run is
   represented in traces, since the current trace is assembled only after a
   successful graph invocation.
-- Confirm the minimum evidence sufficiency rule for returning a qualified
-  answer versus abstaining; do not imply that merely having one result proves
-  evidence is sufficient.
+- Define and test the minimum evidence-sufficiency rule for returning a
+  qualified answer versus abstaining. Currently, deterministic abstention
+  covers the no-source case; source presence alone is not a sufficiency rule.

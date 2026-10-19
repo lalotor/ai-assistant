@@ -18,6 +18,27 @@ def reviewer_node(state: AgentState) -> AgentState:
 
     started = datetime.now()
 
+    if state.selected_tool == "doc_retriever" and not state.retrieved_sources:
+        state.final_answer = "I couldn't find relevant documentation to support an answer to this question."
+        state.review_feedback = "No retrieved sources were available; abstained to avoid an unsupported answer."
+
+        if state.stage_timings is None:
+            state.stage_timings = {}
+        state.stage_timings["reviewer"] = {
+            "started_at": started,
+            "ended_at": datetime.now()
+        }
+
+        if state.stage_llm_usage is None:
+            state.stage_llm_usage = {}
+        state.stage_llm_usage["reviewer"] = {
+            "llm_calls": 0,
+            "token_usage": None,
+        }
+
+        logger.info("reviewer_abstained", reason="no_retrieved_sources")
+        return state
+
     review_prompt = format_prompt(
         "reviewer.txt",
         user_input=state.user_input,
