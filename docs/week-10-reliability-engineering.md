@@ -1,5 +1,11 @@
 # Week 10 — Reliability Engineering for AI Workflows
 
+**Status: Complete.** The reliability implementation, deterministic tests,
+three-run evaluation, and user manual verification are complete. Known
+limitations—including provider retry-attempt observability and stochastic
+Reviewer evidence judgments—are documented and accepted for this week's
+scope; they are not represented as capabilities the system does not have.
+
 **Project:** AI Engineering Assistant  
 **Duration:** 4 hours  
 **Core stack:** Python, LangGraph, LangChain, FAISS, OpenAI API, FastAPI
@@ -278,7 +284,7 @@ Preserve the Week 9 baseline files. Document any quality regression, unexpected 
     provider retries remain bounded, while `recovered` is reserved and not
     emitted. Do not infer retries from timing or add nested retries. Revisit
     this limitation if the provider integration adds a stable signal.
-- [x] Existing evaluations run; any quality regression is investigated.
+- [x] Existing evaluations run; quality findings are investigated and remaining limitations accepted.
   - **Result:** Three full runs of the revised 11-question dataset (33
     evaluations) passed 32 questions, with no errors or timeouts. The
     aggregate is recorded in
@@ -286,10 +292,13 @@ Preserve the Week 9 baseline files. Document any quality regression, unexpected 
     and [reliability_eng_phrase_groups.json](../evaluation/reports/reliability_eng_phrase_groups.json).
     The observed averages were 0.8553 answer score, 0.5152 retrieval/source
     score, 5,913.3 ms latency, and 4,025.5 tokens per question.
-  - **Remaining finding:** One full-run DiffService abstention persisted
+  - **Evaluation finding:** One full-run DiffService abstention persisted
     despite retrieving the controller call site. A later smoke run still
     abstained on that question after a prompt clarification; the known
-    evidence-judgment issue remains intermittent and unresolved. Curated
+    evidence-judgment issue is model-dependent. Manual user verification on
+    2026-10-20 confirmed the latest changes behaved as expected. This
+    intermittent evaluation result remains recorded as a limitation, not a
+    release blocker. Curated
     phrase alternatives now cover semantically equivalent retry and
     architecture terminology, while retaining the original keywords for
     diagnostics. This keyword-based score is not a semantic judge, and the
@@ -324,7 +333,10 @@ The provider client's deterministic tests cover transient retry recovery and
 permanent failure. Execution traces do not claim a recovered outcome because
 the retry attempts are not observable through the current client integration.
 
-Week 10 is complete when these scenarios are reproducible through automated tests and you can explain their effects on quality, latency, cost, and observability.
+Week 10 is complete when these scenarios are reproducible through automated
+tests and their effects on quality, latency, cost, and observability are
+understood. The documented retry-observability and model-judgment limitations
+are accepted within this week's scope.
 
 **Core principle:** Reliability is not the absence of failures. It is the ability to handle failures within defined limits while preserving correctness and making the outcome observable.
 

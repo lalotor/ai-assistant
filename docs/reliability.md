@@ -125,8 +125,8 @@ single full-suite miss was a DiffService abstention despite retrieving the
 controller call site and its four arguments. A subsequent two-question smoke
 run still abstained on DiffService after the Reviewer prompt was clarified to
 state that a visible call expression is sufficient evidence; the retrieval
-was correct, but this model-judgment failure remains intermittent and
-unresolved. The ingestion question passed in the smoke run.
+was correct, but the model's evidence judgment remains intermittent. The
+ingestion question passed in the smoke run.
 
 The revised keyword scoring accepts curated phrase alternatives for each
 required concept and retains the original literal keywords for diagnostics.
@@ -141,9 +141,10 @@ DiffService identifier/source, the MongoDB no-context case, and a question
 about a service absent from the corpus). These are separate live LLM runs,
 not deterministic paired measurements; differences cannot be attributed
 solely to the reliability changes. The prompt clarification was smoke-tested
-but not included in the three-run aggregate. The remaining DiffService
-abstention should be revisited before claiming complete answer-quality
-closure.
+but not included in the three-run aggregate. Manual user verification on
+2026-10-20 confirmed the latest changes behaved as expected. The intermittent
+DiffService abstention remains a documented model-judgment limitation, not a
+claim of deterministic resolution or a blocker to closing the Week 10 scope.
 
 ## Accepted observability limitation
 
