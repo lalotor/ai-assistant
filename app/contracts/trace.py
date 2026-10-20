@@ -91,10 +91,13 @@ class ExecutionTrace:
     worker_events: list[StageEvent]
     reviewer_events: list[StageEvent]
 
-    retrieval_trace: RetrievalTrace
+    retrieval_trace: Optional[RetrievalTrace]
 
     final_answer: str
     outcome: Literal["success", "recovered", "degraded", "failed"] = "success"
+    failed_stage: Optional[str] = None
+    failure_category: Optional[str] = None
+    failure_type: Optional[str] = None
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serializable dictionary with datetime fields as ISO 8601 strings."""

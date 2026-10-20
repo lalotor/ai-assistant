@@ -3,6 +3,15 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from app.contracts.trace import RetrievalTrace
 
+
+class InvalidToolSelectionError(ValueError):
+    """Raised when the Planner selects a tool that is not registered."""
+
+
+class ToolExecutionError(RuntimeError):
+    """Raised when a selected tool fails before producing a valid result."""
+
+
 class ToolDecision(BaseModel):
     """Structured output model for LLM tool selection decision."""
 

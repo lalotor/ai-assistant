@@ -3,6 +3,7 @@ import structlog
 from app.tools.registry import TOOLS
 from app.contracts.agent import AgentState
 from app.contracts.retrieval import RetrievalUnavailableError
+from app.contracts.tools import InvalidToolSelectionError, ToolExecutionError
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -36,9 +37,12 @@ def worker_node(state: AgentState) -> AgentState:
     if tool_entry is None:
         logger.error(
             "unknown_tool_selected",
-            selected_tool=state.selected_tool
+            selected_tool=state.selected_tool,
+            failure_category="invalid_tool_selection",
         )
-        tool_result = f"Error: Unknown tool '{state.selected_tool}' was selected"
+        raise InvalidToolSelectionError(
+            f"Unknown tool '{state.selected_tool}' was selected."
+        )
     else:
         try:
             outcome = tool_entry["invoke"](tool_input, state.user_input)
@@ -60,9 +64,10 @@ def worker_node(state: AgentState) -> AgentState:
             logger.error(
                 "tool_execution_failed",
                 selected_tool=state.selected_tool,
-                error=str(e)
+                failure_category="tool_execution_error",
+                error_type=type(e).__name__,
             )
-            tool_result = f"Error executing {state.selected_tool}: {str(e)}"
+            raise ToolExecutionError("Tool execution failed.") from e
 
     state.tool_output = str(tool_result)
     state.draft_answer = f"Tool result:\n{state.tool_output}"

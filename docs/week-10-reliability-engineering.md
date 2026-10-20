@@ -235,15 +235,69 @@ Preserve the Week 9 baseline files. Document any quality regression, unexpected 
 
 ## 9. Definition of done
 
-- [ ] Failure policies documented for critical stages and external dependencies.
-- [ ] Retries are selective, bounded, and distinguish transient from permanent failures.
-- [ ] Operation timeouts are enforced at appropriate boundaries.
-- [ ] At least one retrieval fallback works end to end.
-- [ ] Insufficient evidence and unrecoverable failures have explicit outcomes.
-- [ ] Automated tests cover recovery, retry exhaustion, permanent errors, and retrieval failure combinations.
+- [x] Failure policies documented for critical stages and external dependencies.
+  - **Note:** `docs/reliability.md` records the policies. Unexpected tool
+    failures now propagate as `ToolExecutionError`, and invalid tool selections
+    fail as `InvalidToolSelectionError`; neither becomes draft text.
+- [x] Retries are selective, bounded, and distinguish transient from permanent failures.
+  - **Note:** The OpenAI client is configured for two retries and a 30-second
+    request timeout; deterministic tests cover retry success, exhaustion, and
+    permanent errors. Retry attempts are not exposed in runtime telemetry.
+- [x] Operation timeouts are enforced at appropriate boundaries.
+  - **Note:** Provider request timeouts are set at the client boundary and
+    tested against a local HTTP server that delays its response.
+- [x] At least one retrieval fallback works end to end.
+  - **Note:** `tests/runtime/test_retrieval_fallback_flow.py` runs the actual
+    graph through `AssistantRuntime.run_question()` with vector failure and
+    controlled keyword evidence, including mixed-case exact identifiers. It
+    verifies that the evidence and source reach the Reviewer, the answer is
+    returned with provenance, and the execution/retrieval traces identify the
+    degraded fallback. Keyword matching compares query and content
+    case-insensitively and includes a non-matching adjacent code chunk from
+    the same source when it continues a matching chunk. The regression
+    fixture verifies that all DiffService call arguments reach the Reviewer.
+    The final live evaluation and remaining quality gaps are summarized in
+    the [Evaluation snapshot](reliability.md#evaluation-snapshot).
+- [x] Insufficient evidence and unrecoverable failures have explicit outcomes.
+  - **Note:** No-source Doc Retriever results cause deterministic abstention;
+    when sources exist, the Reviewer must report `evidence_sufficient`, and a
+    false result is replaced with a standard abstention. Total retrieval and
+    other terminal failures propagate to the existing generic API 500 path.
+    Evidence sufficiency with sources is LLM-judged, not a deterministic
+    semantic proof.
+- [x] Automated tests cover recovery, retry exhaustion, permanent errors, and retrieval failure combinations.
+  - **Note:** Retry success/exhaustion/permanent errors, actual client timeout,
+    vector/keyword failure combinations, end-to-end fallback/provenance,
+    Reviewer abstention for irrelevant or partial evidence, and Reviewer
+    timeout behavior through the API failure path are covered.
 - [ ] Traces distinguish normal success, recovered success, degraded success, and failure.
-- [ ] Existing evaluations run; any quality regression is investigated.
-- [ ] Week 9 baseline is preserved for comparison.
+  - **Partial:** Successful Execution Traces distinguish `success` and
+    `degraded`; failed graph stages emit safe structured failed Execution
+    Traces with stage and partial timing. Provider retry recovery is not
+    observable, so `recovered` is not emitted.
+- [x] Existing evaluations run; any quality regression is investigated.
+  - **Result:** Three full runs of the revised 11-question dataset (33
+    evaluations) passed 28 questions, with no errors or timeouts. The
+    aggregate is recorded in
+    [reliability_eng_refined.md](../evaluation/reports/reliability_eng_refined.md)
+    and [reliability_eng_refined.json](../evaluation/reports/reliability_eng_refined.json).
+    The observed averages were 0.7364 answer score, 0.5354 retrieval/source
+    score, 5,788.5 ms latency, and 3,906 tokens per question.
+  - **Remaining findings:** Two DiffService runs abstained despite retrieving
+    the controller call site; one ingestion run abstained with the source
+    file retrieved. The retry-policy and queue-versus-REST answers described
+    the expected behavior but missed literal expected-keyword checks (for
+    example, `max_retries` versus “up to 3 times,” and `dead-letter queue`
+    versus “dead letter queue”). Review these rubric mismatches before the
+    next evaluation; the 28/33 result is not a complete measure of semantic
+    answer quality. The revised rubric and 2026-10-19 results also differ
+    from Week 9, so the score change is not a controlled comparison. No
+    additional live evaluation was run after these mismatches were identified.
+- [x] Week 9 baseline is preserved for comparison.
+  - **Note:** The existing Week 9 baseline and optimized reports were not
+    modified; the latest Week 10 results are in the separate
+    `reliability_eng_refined` reports. The earlier
+    `reliability_eng` reports remain historical.
 
 ## 10. Targeted references
 

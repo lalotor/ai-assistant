@@ -5,8 +5,10 @@ from dotenv import load_dotenv
 
 from app.contracts.response import QueryResponse
 from app.contracts.agent import AgentState
+from app.contracts.errors import WorkflowStageError
 from app.contracts.retrieval import RetrievalUnavailableError
-from app.tracing import build_execution_trace
+from app.contracts.tools import InvalidToolSelectionError, ToolExecutionError
+from app.tracing import build_execution_trace, build_failed_execution_trace
 
 logger = structlog.get_logger(__name__)
 
@@ -127,8 +129,31 @@ class AssistantRuntime:
                 trace_id=trace.trace_id
             )
         except Exception as e:
+            if isinstance(e, WorkflowStageError):
+                failed_trace = build_failed_execution_trace(
+                    trace_id=trace_id,
+                    stage_timings=e.stage_timings,
+                    failed_stage=e.stage,
+                    failure_category=e.failure_category,
+                    failure_type=e.failure_type,
+                )
+                logger.error(
+                    "workflow_execution_failed",
+                    trace_id=trace_id,
+                    outcome="failed",
+                    stage=e.stage,
+                    failure_category=e.failure_category,
+                    error_type=e.failure_type,
+                    execution_trace=failed_trace.to_dict(),
+                )
+                raise
+
             if isinstance(e, RetrievalUnavailableError):
                 failure_category = "retrieval_unavailable"
+            elif isinstance(e, InvalidToolSelectionError):
+                failure_category = "invalid_tool_selection"
+            elif isinstance(e, ToolExecutionError):
+                failure_category = "tool_execution_error"
             elif isinstance(e, (TimeoutError, openai.APITimeoutError)):
                 failure_category = "operation_timeout"
             else:

@@ -10,13 +10,23 @@ from app.agents.reviewer import reviewer_node
 from app.contracts.agent import AgentState
 
 
-def make_structured_llm(mocker, final_answer="the final answer", feedback="looks good", usage_metadata=None):
+def make_structured_llm(
+    mocker,
+    final_answer="the final answer",
+    feedback="looks good",
+    evidence_sufficient=True,
+    usage_metadata=None,
+):
     """Mirrors tests/agents/test_planner.py's make_structured_llm: builds a
     mock get_llm() replacement whose with_structured_output(...,
     include_raw=True) returns {"raw": ..., "parsed": ...}, matching
     LangChain's include_raw=True contract.
     """
-    parsed = mocker.Mock(final_answer=final_answer, feedback=feedback)
+    parsed = mocker.Mock(
+        final_answer=final_answer,
+        feedback=feedback,
+        evidence_sufficient=evidence_sufficient,
+    )
     raw = mocker.Mock(usage_metadata=usage_metadata)
     mock_structured = mocker.Mock()
     mock_structured.invoke.return_value = {"raw": raw, "parsed": parsed}
@@ -49,6 +59,42 @@ class TestReviewerNode:
 
         assert result.final_answer == "X is ..."
         assert result.review_feedback == "clear and grounded"
+
+    @pytest.mark.parametrize(
+        "draft_answer",
+        [
+            "Tool result:\nThe source discusses a different topic.",
+            "Tool result:\nThe policy allows retries, but does not state how many.",
+        ],
+    )
+    def test_abstains_when_sources_do_not_sufficiently_support_the_answer(
+        self, mocker, draft_answer
+    ):
+        mock_llm = make_structured_llm(
+            mocker,
+            final_answer="The unsupported value is 42.",
+            feedback="The sources do not mention this value.",
+            evidence_sufficient=False,
+        )
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state(
+            draft_answer=draft_answer,
+            retrieved_sources=["unrelated.md"],
+        )
+
+        result = reviewer_node(state)
+
+        assert result.final_answer == (
+            "The available documentation does not provide enough evidence to answer this question reliably."
+        )
+        assert result.review_feedback == (
+            "The retrieved sources did not sufficiently support an answer; abstained to avoid unsupported claims."
+        )
+        review_prompt = mock_llm.with_structured_output.return_value.invoke.call_args.args[0]
+        assert "source presence alone does not establish evidence sufficiency" in review_prompt
+        assert "only partially support" in review_prompt
+        assert "reproduce supported names and values verbatim" in review_prompt
+        assert "call site is direct evidence of the arguments passed" in review_prompt
 
     def test_abstains_without_calling_llm_when_doc_retriever_returns_no_sources(self, mocker):
         get_llm = mocker.patch("app.agents.reviewer.get_llm")

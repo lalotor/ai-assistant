@@ -15,7 +15,7 @@ The second pipeline stage. Invokes the Tool selected by the Planner and produces
 _Avoid_: Executor, Runner
 
 **Reviewer**:
-The third and final pipeline stage. Reviews the Draft Answer and produces the Final Answer plus Review Feedback.
+The third and final pipeline stage. Reviews the Draft Answer against the selected Tool's output and produces the Final Answer plus Review Feedback. For Doc Retriever results, it also assesses whether the retrieved excerpts sufficiently support the answer; an insufficient-evidence decision produces an abstention.
 _Avoid_: Critic, Validator
 
 **Plan**:

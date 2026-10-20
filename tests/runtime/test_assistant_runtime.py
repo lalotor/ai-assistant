@@ -12,6 +12,7 @@ import openai
 
 from app.contracts.agent import AgentState
 from app.contracts.retrieval import RetrievalUnavailableError
+from app.contracts.tools import InvalidToolSelectionError, ToolExecutionError
 from app.runtime.assistant_runtime import AssistantRuntime
 
 
@@ -153,6 +154,41 @@ class TestAssistantRuntimeRunQuestion:
             outcome="failed",
             failure_category="retrieval_unavailable",
             error_type="RetrievalUnavailableError",
+        )
+
+    @pytest.mark.parametrize(
+        ("failure", "category", "error_type"),
+        [
+            (
+                InvalidToolSelectionError("invalid selection"),
+                "invalid_tool_selection",
+                "InvalidToolSelectionError",
+            ),
+            (
+                ToolExecutionError("tool failed"),
+                "tool_execution_error",
+                "ToolExecutionError",
+            ),
+        ],
+    )
+    def test_logs_tool_failures_with_structured_category(
+        self, mocker, failure, category, error_type
+    ):
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.side_effect = failure
+        error_log = mocker.patch("app.runtime.assistant_runtime.logger.error")
+
+        with pytest.raises(type(failure)):
+            runtime.run_question("hello", trace_id="t-tool")
+
+        error_log.assert_called_once_with(
+            "workflow_execution_failed",
+            trace_id="t-tool",
+            outcome="failed",
+            failure_category=category,
+            error_type=error_type,
         )
 
     def test_logs_provider_timeout_as_operation_timeout(self, mocker):

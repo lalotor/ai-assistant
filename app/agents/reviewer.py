@@ -60,8 +60,18 @@ def reviewer_node(state: AgentState) -> AgentState:
         feedback=response.feedback
     )
 
-    state.final_answer = response.final_answer
-    state.review_feedback = response.feedback
+    if state.selected_tool == "doc_retriever" and not response.evidence_sufficient:
+        state.final_answer = (
+            "The available documentation does not provide enough evidence to answer this question reliably."
+        )
+        state.review_feedback = (
+            "The retrieved sources did not sufficiently support an answer; "
+            "abstained to avoid unsupported claims."
+        )
+        logger.info("reviewer_abstained", reason="insufficient_evidence")
+    else:
+        state.final_answer = response.final_answer
+        state.review_feedback = response.feedback
 
     if state.stage_timings is None:
         state.stage_timings = {}
