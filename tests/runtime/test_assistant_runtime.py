@@ -9,6 +9,7 @@ defining module, not at assistant_runtime's import site.
 import pytest
 import httpx
 import openai
+from structlog.testing import capture_logs
 
 from app.contracts.agent import AgentState
 from app.contracts.retrieval import RetrievalUnavailableError
@@ -67,6 +68,30 @@ class TestAssistantRuntimeRunQuestion:
         }
         base.update(overrides)
         return base
+
+    def test_does_not_log_question_plan_or_answer_content(self, mocker):
+        secret = "runtime-private-needle-2c3e"
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.return_value = self._final_result(
+            user_input=secret,
+            plan=secret,
+            tool_input={"query": secret},
+            tool_output=secret,
+            draft_answer=secret,
+            final_answer=secret,
+            review_feedback=secret,
+        )
+        mocker.patch(
+            "app.runtime.assistant_runtime.build_execution_trace",
+            return_value=mocker.Mock(trace_id="t-private"),
+        )
+
+        with capture_logs() as logs:
+            runtime.run_question(secret, trace_id="t-private")
+
+        assert all(secret not in repr(event) for event in logs)
 
     def test_calls_setup_automatically_when_not_yet_initialized(self, mock_setup_dependencies, mocker):
         mock_setup_dependencies.invoke.return_value = self._final_result()

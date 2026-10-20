@@ -7,6 +7,7 @@ are exercised only through this seam, mocked at their system boundaries
 survive internal refactors.
 """
 import pytest
+from structlog.testing import capture_logs
 
 from langchain_core.documents import Document
 
@@ -15,6 +16,31 @@ from app.contracts.tools import DocInput
 
 @pytest.mark.unit
 class TestDocRetriever:
+    def test_does_not_log_retrieval_query_or_document_content(self, mocker):
+        from app.tools.doc_retriever import doc_retriever
+
+        private_query = "query-private-needle-4473"
+        private_document = "document-private-needle-c981"
+        vector_results = [
+            {
+                "content": private_document,
+                "source": "private.md",
+                "file_type": ".md",
+                "score": 0.1,
+                "search_type": "similarity",
+            }
+        ]
+        mocker.patch("app.tools.doc_retriever.get_vector_store", return_value=mocker.Mock())
+        mocker.patch("app.tools.doc_retriever.retrieve_context", return_value=vector_results)
+        mocker.patch("app.tools.doc_retriever.get_cached_chunks", return_value=[])
+
+        with capture_logs() as logs:
+            doc_retriever(DocInput(query=private_query))
+
+        logged_events = repr(logs)
+        assert private_query not in logged_events
+        assert private_document not in logged_events
+
     def test_vector_failure_falls_back_to_keyword_evidence_and_records_degraded_path(self, mocker):
         from app.tools.doc_retriever import doc_retriever
 

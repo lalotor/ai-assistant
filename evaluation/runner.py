@@ -76,15 +76,15 @@ def ask_assistant(question: str, timeout: int | None = None) -> QueryResponse:
             check=False,
             timeout=effective_timeout if effective_timeout > 0 else None,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         logger.error(
             "assistant_timeout",
-            question=question[:100],
+            question_length=len(question),
             timeout_seconds=effective_timeout,
         )
         raise TimeoutError(
-            f"Question timed out after {effective_timeout}s: {question[:80]}"
-        )
+            f"Question processing timed out after {effective_timeout}s."
+        ) from exc
 
     if result.returncode != 0:
         logger.error(
@@ -100,6 +100,36 @@ def ask_assistant(question: str, timeout: int | None = None) -> QueryResponse:
     stdout_lines = result.stdout.strip().splitlines()
     json_line = stdout_lines[-1] if stdout_lines else ""
     return QueryResponse.from_dict(json.loads(json_line))
+
+
+def score_keywords(
+    answer: str,
+    expected_keywords: list[str] | None = None,
+    expected_keyword_groups: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """Score literal keywords or concepts with explicitly accepted phrasings."""
+    normalized_answer = answer.casefold()
+    expected = expected_keywords or []
+    hits = [keyword for keyword in expected if keyword.casefold() in normalized_answer]
+
+    if expected_keyword_groups:
+        matched_groups = [
+            label
+            for label, alternatives in expected_keyword_groups.items()
+            if any(alternative.casefold() in normalized_answer for alternative in alternatives)
+        ]
+        score = len(matched_groups) / len(expected_keyword_groups)
+    else:
+        matched_groups = []
+        score = len(hits) / len(expected) if expected else 1.0
+
+    return {
+        "expected_keywords": expected,
+        "matched_keywords": hits,
+        "expected_keyword_groups": expected_keyword_groups or {},
+        "matched_keyword_groups": matched_groups,
+        "score": score,
+    }
 
 
 def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
@@ -144,18 +174,22 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
         logger.info(
             "evaluating_question",
             progression=f"[{idx}/{len(eval_set)}]",
-            Q=question[:100]
+            question_length=len(question),
         )
 
         try:
             response = ask_assistant(question)
-            answer = response.final_answer.lower()
             retrieved_sources = response.retrieved_sources
 
             # Keyword matching
             expected = item.get("expected_keywords", [])
-            hits = [kw for kw in expected if kw.lower() in answer]
-            score = len(hits) / len(expected) if expected else 1.0
+            keyword_score = score_keywords(
+                response.final_answer,
+                expected_keywords=expected,
+                expected_keyword_groups=item.get("expected_keyword_groups"),
+            )
+            hits = keyword_score["matched_keywords"]
+            score = keyword_score["score"]
 
             # Files matching
             expected_sources = item.get("expected_sources", [])
@@ -185,6 +219,8 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                 "retrieved_sources": retrieved_sources_list,
                 "expected_keywords": expected,
                 "matched_keywords": hits,
+                "expected_keyword_groups": keyword_score["expected_keyword_groups"],
+                "matched_keyword_groups": keyword_score["matched_keyword_groups"],
                 "expected_sources": expected_sources,
                 "matched_sources": hits_sources,
                 "score": score,
@@ -237,9 +273,19 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                     else None
                 ),
             }
+            matched_criteria = (
+                keyword_score["matched_keyword_groups"]
+                if keyword_score["expected_keyword_groups"]
+                else hits
+            )
+            expected_criteria_count = (
+                len(keyword_score["expected_keyword_groups"])
+                if keyword_score["expected_keyword_groups"]
+                else len(expected)
+            )
             logger.info(
                 "evaluation_result",
-                score=f"{len(hits)}/{len(expected)} matched (score: {score:.0%})",
+                score=f"{len(matched_criteria)}/{expected_criteria_count} matched (score: {score:.0%})",
                 score_sources=f"{len(hits_sources)}/{len(expected_sources)} matched (score: {score_sources:.0%})",
                 failure_type=result["failure_type"]
             )
@@ -256,7 +302,7 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
             }
             logger.error(
                 "evaluation_timeout",
-                question=question[:100],
+                question_length=len(question),
                 timeout_seconds=question_timeout,
             )
 
@@ -271,9 +317,7 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
             }
             logger.error(
                 "evaluation_error",
-                error=str(exc),
                 error_type=type(exc).__name__,
-                exc_info=True
             )
 
         results.append(result)

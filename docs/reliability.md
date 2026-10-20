@@ -9,7 +9,7 @@ it does not claim that the current runtime already enforces these behaviors.
 | Outcome | Meaning |
 |---|---|
 | `success` | The workflow completed normally and the Reviewer produced the Final Answer. |
-| `recovered` | A transient failure occurred, but a bounded retry restored the normal path without a known loss of capability. |
+| `recovered` | A transient failure occurred, but a bounded retry restored the normal path without a known loss of capability. Emit only when the retry is observable; the current provider-client integration does not expose a stable retry-attempt signal, so this outcome is reserved and not emitted. |
 | `degraded` | The workflow can safely return a qualified limitation or use partial capabilities, but a known strategy or evidence source was unavailable. |
 | `failed` | The workflow could not safely produce a reviewed, evidence-supported answer. |
 
@@ -89,9 +89,11 @@ retains the existing exception/API failure path but also emits a safe failed
 Execution Trace in structured logs. It identifies the failing stage, category,
 exception type, and available stage timings; snapshots and retrieval details
 are omitted so the failed trace does not contain user input, document content,
-or retrieval queries. The configured provider SDK retries internally but does
-not currently expose retry attempts to the runtime, so a `recovered` outcome
-is not emitted until recovery can be observed reliably.
+or retrieval queries. Routine application logs record lengths/counts and
+structured categories rather than user questions, code, retrieved excerpts,
+drafts, or final answers. The configured provider SDK retries internally but
+does not expose a stable retry-attempt callback to the runtime, so a
+`recovered` outcome is intentionally not emitted.
 
 Do not put raw prompts, document contents, credentials, or unfiltered provider
 exception text into routine telemetry. Successful and degraded answers retain
@@ -102,48 +104,54 @@ represented as successful answers.
 ## Evaluation snapshot
 
 Three full runs of the revised 11-question dataset were completed on
-2026-10-19 (33 evaluations total). The latest aggregate is in
-[reliability_eng_refined.md](../evaluation/reports/reliability_eng_refined.md)
-and [reliability_eng_refined.json](../evaluation/reports/reliability_eng_refined.json);
-raw runs remain under the ignored `evaluation/results/` directory. The
-earlier [reliability_eng.md](../evaluation/reports/reliability_eng.md) is
-preserved as a historical Week 10 report, and the Week 9 optimized report is
-unchanged.
+2026-10-19 (33 evaluations total), using curated alternative phrasings for
+the retry-policy and queue-versus-REST concepts. The aggregate is in
+[reliability_eng_phrase_groups.md](../evaluation/reports/reliability_eng_phrase_groups.md)
+and [reliability_eng_phrase_groups.json](../evaluation/reports/reliability_eng_phrase_groups.json);
+raw runs remain under the ignored `evaluation/results/` directory. Earlier
+Week 10 reports are preserved, and the Week 9 optimized report is unchanged.
 
-| Metric | Week 9 optimized (33 evals) | Week 10 refined (33 evals) |
+| Metric | Week 9 optimized (33 evals) | Week 10 phrase groups (33 evals) |
 |---|---:|---:|
-| Average answer score | 0.6734 | 0.7364 |
-| Average retrieval/source score | 0.4740 | 0.5354 |
-| Average latency | 8,478.5 ms | 5,788.5 ms |
-| P95 latency | 20,130.2 ms | 10,586.8 ms |
-| Average tokens per question | 3,811.2 | 3,906.0 |
+| Average answer score | 0.6734 | 0.8553 |
+| Average retrieval/source score | 0.4740 | 0.5152 |
+| Average latency | 8,478.5 ms | 5,913.3 ms |
+| P95 latency | 20,130.2 ms | 12,486.5 ms |
+| Average tokens per question | 3,811.2 | 4,025.5 |
 | Total LLM calls | 96 | 99 |
 
-The refined run passed 28 of 33 evaluations, with no errors or timeouts. The
-five misses were two DiffService abstentions despite retrieving the controller
-call site, one ingestion-source abstention, one retry-policy answer, and one
-queue-versus-REST answer. The last two answers included the documented
-behavior/tradeoffs but were penalized by exact keyword checks: for example,
-the retry answer said “up to 3 times” and “dead letter queue,” while the
-rubric required `retry_count`, `max_retries`, and `dead-letter queue`; the
-architecture answer described scalability and decoupling without using those
-literal terms. Treat the 28/33 count as a strict benchmark result, not a
-complete measure of semantic answer quality.
+The three runs passed 32 of 33 evaluations, with no errors or timeouts. The
+single full-suite miss was a DiffService abstention despite retrieving the
+controller call site and its four arguments. A subsequent two-question smoke
+run still abstained on DiffService after the Reviewer prompt was clarified to
+state that a visible call expression is sufficient evidence; the retrieval
+was correct, but this model-judgment failure remains intermittent and
+unresolved. The ingestion question passed in the smoke run.
+
+The revised keyword scoring accepts curated phrase alternatives for each
+required concept and retains the original literal keywords for diagnostics.
+This avoids treating “retry up to 3 times” as wrong solely because it omits
+an internal field name, or requiring a hyphen in “dead letter queue.” The
+reported score is still keyword-based, not a semantic judge. These rubric
+changes and separate live LLM runs mean this is not an apples-to-apples
+comparison with Week 9.
 
 The revised dataset also corrected stale expectations (including the
 DiffService identifier/source, the MongoDB no-context case, and a question
-about a service absent from the corpus). These results are therefore not an
-apples-to-apples comparison with Week 9, despite equal sample sizes.
-Furthermore, these are separate live LLM runs, not deterministic paired
-measurements; differences cannot be attributed solely to the reliability
-changes. The prior Week 10 report remains available for historical reference.
-The rubric mismatches above should be reviewed before a future evaluation;
-no further live evaluation was run after identifying them.
+about a service absent from the corpus). These are separate live LLM runs,
+not deterministic paired measurements; differences cannot be attributed
+solely to the reliability changes. The prompt clarification was smoke-tested
+but not included in the three-run aggregate. The remaining DiffService
+abstention should be revisited before claiming complete answer-quality
+closure.
 
-## Decisions to confirm during implementation
+## Accepted observability limitation
 
-- Expose provider retry attempts if the SDK offers a stable hook, then emit
-  `recovered` only when at least one retry actually occurred and succeeded.
+- Keep provider-client retries bounded and enabled. The installed
+  LangChain/OpenAI integration delegates requests to the OpenAI SDK without a
+  stable application-level retry callback. Do not infer recovery from latency
+  or add a second retry layer; leave `recovered` reserved until a stable
+  signal is available.
 - Validate how reliably the Reviewer identifies irrelevant and partial
   evidence. The current sufficiency signal is LLM-judged; no deterministic
   semantic proof exists for source relevance.

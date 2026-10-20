@@ -12,7 +12,7 @@ def reviewer_node(state: AgentState) -> AgentState:
     logger.info(
         "node_started",
         node="reviewer_node",
-        input=state.user_input,
+        input_length=len(state.user_input),
         draft_answer_length=len(state.draft_answer) if state.draft_answer else 0
     )
 
@@ -57,7 +57,7 @@ def reviewer_node(state: AgentState) -> AgentState:
     logger.debug(
         "review_complete",
         final_answer_length=len(response.final_answer),
-        feedback=response.feedback
+        feedback_length=len(response.feedback)
     )
 
     if state.selected_tool == "doc_retriever" and not response.evidence_sufficient:

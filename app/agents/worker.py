@@ -19,7 +19,6 @@ def worker_node(state: AgentState) -> AgentState:
         "node_started",
         node="worker_node",
         selected_tool=state.selected_tool,
-        tool_input=state.tool_input
     )
 
     started = datetime.now()

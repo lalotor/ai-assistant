@@ -97,7 +97,6 @@ class AssistantRuntime:
 
         logger.info(
             "initial_state_created",
-            input=initial_state.user_input,
             content_length=len(initial_state.user_input)
         )
 
@@ -115,11 +114,9 @@ class AssistantRuntime:
             final_result = self.graph.invoke(initial_state, config)
             logger.info(
                 "question_answered",
-                user_input=final_result["user_input"],
-                plan=final_result["plan"],
-                final_answer=final_result["final_answer"],
-                review_feedback=final_result["review_feedback"],
-                retrieved_sources=final_result.get("retrieved_sources")
+                selected_tool=final_result.get("selected_tool"),
+                final_answer_length=len(final_result.get("final_answer", "")),
+                retrieved_source_count=len(final_result.get("retrieved_sources") or []),
             )
             logger.debug("question_answered_successfully")
 

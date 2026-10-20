@@ -49,7 +49,7 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
     """
     logger.info(
         "doc_retriever",
-        query=doc_input.query
+        query_length=len(doc_input.query)
     )
 
     started = datetime.now()
@@ -63,7 +63,7 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
     if not reranked_results:
         logger.info(
             "no_relevant_documents_found",
-            query=doc_input.query
+            query_length=len(doc_input.query)
         )
         retrieval_trace.duration_ms = calculate_duration_ms(started, datetime.now())
         context = "No relevant documentation found for this query. The question may be outside the scope of available technical documentation."
@@ -85,7 +85,7 @@ def doc_retriever(doc_input: DocInput) -> DocOutput:
 
     logger.info(
         "retrieved_context_from_hybrid_search",
-        context=context[:500] + "...",
+        context_length=len(context),
         sources=sources
     )
 

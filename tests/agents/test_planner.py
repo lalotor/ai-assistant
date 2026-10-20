@@ -11,6 +11,7 @@ import os
 from collections import Counter
 
 import pytest
+from structlog.testing import capture_logs
 
 from app.agents.planner import get_tool_decision, planner_node
 from app.contracts.agent import AgentState
@@ -35,6 +36,17 @@ def make_structured_llm(mocker, tool="doc_retriever", reason="looked up docs", t
 
 @pytest.mark.unit
 class TestGetToolDecision:
+    def test_does_not_log_question_or_tool_decision_reason(self, mocker):
+        secret = "planner-private-needle-93e1"
+        mock_llm, _ = make_structured_llm(mocker, reason=secret, tool_input={"query": secret})
+        mocker.patch("app.agents.planner.get_llm", return_value=mock_llm)
+        state = AgentState(user_input=secret, trace_id="trace-1")
+
+        with capture_logs() as logs:
+            planner_node(state)
+
+        assert all(secret not in repr(event) for event in logs)
+
     def test_builds_tool_options_from_the_registry_and_returns_structured_output(self, mocker):
         mock_llm, mock_structured = make_structured_llm(
             mocker, tool="doc_retriever", reason="looked up docs", tool_input={"query": "q"}

@@ -17,7 +17,7 @@ def architecture_advisor(arch_input: ArchInput) -> ArchOutput:
 
     logger.info(
         "architecture_advisor",
-        question=arch_input.question,
+        question_length=len(arch_input.question),
         prompt_length=len(arch_advisor_prompt)
     )
 

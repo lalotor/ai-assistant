@@ -93,6 +93,25 @@
       "max_retries",
       "dead-letter queue"
     ],
+    "expected_keyword_groups": {
+      "retry_count": [
+        "retry_count",
+        "retry up to 3 times",
+        "up to 3 times"
+      ],
+      "backoff": [
+        "exponential backoff"
+      ],
+      "retry_limit": [
+        "max_retries",
+        "maximum retries",
+        "retry limit"
+      ],
+      "dead_letter_queue": [
+        "dead-letter queue",
+        "dead letter queue"
+      ]
+    },
     "expected_sources": [
       "data/docs/docs/async-processing.md"
     ],
@@ -107,6 +126,35 @@
       "timeout",
       "resilience"
     ],
+    "expected_keyword_groups": {
+      "scalability": [
+        "scalability",
+        "scalable",
+        "scales workers independently",
+        "scale workers independently"
+      ],
+      "decoupling": [
+        "decoupling",
+        "independent workers",
+        "workers independently"
+      ],
+      "retry": [
+        "retry",
+        "retries",
+        "retrying"
+      ],
+      "timeout": [
+        "timeout",
+        "timeouts",
+        "timed out"
+      ],
+      "resilience": [
+        "resilience",
+        "reliability",
+        "reliable",
+        "robust"
+      ]
+    },
     "expected_sources": [],
     "category": "architecture_advisor"
   },

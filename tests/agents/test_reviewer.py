@@ -5,6 +5,7 @@ public interface. The LLM boundary (app.agents.reviewer.get_llm) is
 mocked so these run without network access or API cost.
 """
 import pytest
+from structlog.testing import capture_logs
 
 from app.agents.reviewer import reviewer_node
 from app.contracts.agent import AgentState
@@ -50,6 +51,19 @@ def make_state(**overrides) -> AgentState:
 
 @pytest.mark.unit
 class TestReviewerNode:
+    def test_does_not_log_user_input_draft_or_review_feedback(self, mocker):
+        secret = "review-private-needle-61ab"
+        mocker.patch(
+            "app.agents.reviewer.get_llm",
+            return_value=make_structured_llm(mocker, feedback=secret),
+        )
+        state = make_state(user_input=secret, draft_answer=secret)
+
+        with capture_logs() as logs:
+            reviewer_node(state)
+
+        assert all(secret not in repr(event) for event in logs)
+
     def test_sets_final_answer_and_review_feedback_from_structured_output(self, mocker):
         mock_llm = make_structured_llm(mocker, final_answer="X is ...", feedback="clear and grounded")
         mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
@@ -95,6 +109,7 @@ class TestReviewerNode:
         assert "only partially support" in review_prompt
         assert "reproduce supported names and values verbatim" in review_prompt
         assert "call site is direct evidence of the arguments passed" in review_prompt
+        assert "do not require the method declaration or type signature" in review_prompt
 
     def test_abstains_without_calling_llm_when_doc_retriever_returns_no_sources(self, mocker):
         get_llm = mocker.patch("app.agents.reviewer.get_llm")

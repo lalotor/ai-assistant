@@ -18,7 +18,7 @@ def code_explainer(code_input: CodeInput) -> CodeOutput:
 
     logger.info(
         "code_explainer",
-        code_snippet=code_input.code,
+        code_length=len(code_input.code),
         prompt_length=len(code_explanation_prompt)
     )
 

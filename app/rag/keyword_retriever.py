@@ -82,7 +82,7 @@ def keyword_search(chunks, query):
 
     logger.debug(
         "keyword_search",
-        results=[r["content"] for r in results[:4]]
+        result_count=min(len(results), 4)
     )
 
     return results[:4]

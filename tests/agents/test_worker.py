@@ -9,6 +9,7 @@ real tool, since worker_node's job is dispatch, not tool correctness
 adapters).
 """
 import pytest
+from structlog.testing import capture_logs
 
 from app.agents.worker import worker_node
 from app.contracts.agent import AgentState
@@ -31,6 +32,27 @@ def fake_tools(invoke_fn) -> dict:
 
 @pytest.mark.unit
 class TestWorkerNodeDispatch:
+    def test_logs_tool_selection_without_query_content(self, mocker):
+        sensitive_query = "customer-secret-needle-7f92"
+        mocker.patch(
+            "app.agents.worker.TOOLS",
+            {"doc_retriever": {"invoke": mocker.Mock(return_value={
+                "result": "found", "sources": [], "retrieval_trace": None
+            })}},
+        )
+        state = make_state(
+            "doc_retriever",
+            tool_input={"query": sensitive_query},
+            user_input=sensitive_query,
+        )
+
+        with capture_logs() as logs:
+            worker_node(state)
+
+        assert any(event.get("selected_tool") == "doc_retriever" for event in logs)
+        assert all(sensitive_query not in repr(event) for event in logs)
+        assert all("tool_input" not in event for event in logs)
+
     def test_dispatches_through_the_registrys_invoke_adapter(self, mocker):
         mocker.patch(
             "app.agents.worker.TOOLS",

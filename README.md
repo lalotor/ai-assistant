@@ -38,7 +38,6 @@ python main.py --question "Considering only your internal documentation, how man
 
 ## Run the evaluation suite
 ```bash
-python evaluation/runner.py
 python -m evaluation.runner
 
 uv run python -c "
