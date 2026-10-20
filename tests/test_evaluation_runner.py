@@ -11,10 +11,13 @@ all initialisation is centralised). This requires a valid .env to be
 present, matching how the module is used in practice (via
 `python -m evaluation.runner`).
 """
+import subprocess
+
 import pytest
+from structlog.testing import capture_logs
 
 from app.contracts.response import QueryResponse
-from evaluation.runner import classify_failure
+from evaluation.runner import ask_assistant, classify_failure, score_keywords
 
 
 def make_response(**overrides) -> QueryResponse:
@@ -99,3 +102,50 @@ class TestClassifyFailure:
         result = classify_failure(item, response, score=0.0, score_sources=0.0)
 
         assert result == "missing_context"
+
+
+@pytest.mark.unit
+class TestScoreKeywords:
+    def test_accepts_explicit_phrasing_alternatives_for_required_concepts(self):
+        answer = (
+            "Retry up to 3 times with exponential backoff, then move the task "
+            "to the dead letter queue."
+        )
+        groups = {
+            "retry_count": ["retry_count", "retry up to 3 times", "up to 3 times"],
+            "backoff": ["exponential backoff"],
+            "retry_limit": ["max_retries", "maximum retries", "retry limit"],
+            "dead_letter_queue": ["dead-letter queue", "dead letter queue"],
+        }
+
+        result = score_keywords(answer, expected_keyword_groups=groups)
+
+        assert result["matched_keyword_groups"] == [
+            "retry_count",
+            "backoff",
+            "dead_letter_queue",
+        ]
+        assert result["score"] == 0.75
+
+    def test_preserves_legacy_exact_keyword_scoring(self):
+        result = score_keywords("The answer uses alpha.", expected_keywords=["alpha", "beta"])
+
+        assert result["matched_keywords"] == ["alpha"]
+        assert result["score"] == 0.5
+
+
+@pytest.mark.unit
+class TestAskAssistant:
+    def test_timeout_does_not_log_or_raise_with_question_content(self, mocker):
+        secret = "evaluation-private-needle-508c"
+        mocker.patch(
+            "evaluation.runner.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="main.py", timeout=1),
+        )
+
+        with capture_logs() as logs:
+            with pytest.raises(TimeoutError) as exc_info:
+                ask_assistant(secret, timeout=1)
+
+        assert secret not in repr(logs)
+        assert secret not in str(exc_info.value)

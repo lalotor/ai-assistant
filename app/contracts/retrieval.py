@@ -5,3 +5,7 @@ class LoadedDocument(BaseModel):
     content: str = Field(description="The textual content of the document")
     source: str = Field(description="The source path of the document")
     type: str = Field(description="The file type/extension of the document")
+
+
+class RetrievalUnavailableError(RuntimeError):
+    """Raised when no retrieval strategy completes successfully."""

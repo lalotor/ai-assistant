@@ -5,6 +5,49 @@ from app.utils.util import calculate_duration_ms
 logger = structlog.get_logger()
 
 
+def build_failed_execution_trace(
+    trace_id: str,
+    stage_timings: dict,
+    failed_stage: str,
+    failure_category: str,
+    failure_type: str,
+) -> ExecutionTrace:
+    """Build a content-free execution trace for a failed graph invocation."""
+    state = {
+        "stage_timings": stage_timings,
+        "stage_llm_usage": {},
+    }
+    events = {
+        stage: _build_stage_event(state, stage, {}, {})
+        for stage in ("planner", "worker", "reviewer")
+    }
+    events[failed_stage].error = failure_category
+
+    started_at = events["planner"].started_at
+    ended_at = events[failed_stage].ended_at
+    duration_ms = (
+        calculate_duration_ms(started_at, ended_at)
+        if started_at is not None and ended_at is not None
+        else None
+    )
+
+    return ExecutionTrace(
+        trace_id=trace_id,
+        started_at=started_at,
+        ended_at=ended_at,
+        duration_ms=duration_ms,
+        planner_events=[events["planner"]],
+        worker_events=[events["worker"]],
+        reviewer_events=[events["reviewer"]],
+        retrieval_trace=None,
+        final_answer="",
+        outcome="failed",
+        failed_stage=failed_stage,
+        failure_category=failure_category,
+        failure_type=failure_type,
+    )
+
+
 def build_execution_trace(state: dict) -> ExecutionTrace:
     """Build an execution trace from the final state of the workflow."""
 
@@ -55,6 +98,15 @@ def build_execution_trace(state: dict) -> ExecutionTrace:
         if planner_event.started_at is not None and reviewer_event.ended_at is not None
         else None
     )
+    retrieval_trace = state.get("retrieval_trace")
+    retrieved_sources = state.get("retrieved_sources")
+    degraded = bool(_trace_value(retrieval_trace, "fallback_used"))
+    if (
+        retrieval_trace is not None
+        and state.get("selected_tool") == "doc_retriever"
+        and not retrieved_sources
+    ):
+        degraded = True
 
     return ExecutionTrace(
         trace_id=state["trace_id"],
@@ -64,9 +116,16 @@ def build_execution_trace(state: dict) -> ExecutionTrace:
         planner_events=[planner_event],
         worker_events=[worker_event],
         reviewer_events=[reviewer_event],
-        retrieval_trace=state.get("retrieval_trace", None),
+        retrieval_trace=retrieval_trace,
         final_answer=state.get("final_answer", ""),
+        outcome="degraded" if degraded else "success",
     )
+
+
+def _trace_value(retrieval_trace: object, field: str) -> object:
+    if isinstance(retrieval_trace, dict):
+        return retrieval_trace.get(field)
+    return getattr(retrieval_trace, field, None)
 
 
 def _build_stage_event(

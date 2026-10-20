@@ -15,7 +15,7 @@ The second pipeline stage. Invokes the Tool selected by the Planner and produces
 _Avoid_: Executor, Runner
 
 **Reviewer**:
-The third and final pipeline stage. Reviews the Draft Answer and produces the Final Answer plus Review Feedback.
+The third and final pipeline stage. Reviews the Draft Answer against the selected Tool's output and produces the Final Answer plus Review Feedback. For Doc Retriever results, it also assesses whether the retrieved excerpts sufficiently support the answer; an insufficient-evidence decision produces an abstention.
 _Avoid_: Critic, Validator
 
 **Plan**:
@@ -62,12 +62,16 @@ _Avoid_: Citations, References
 ### Tracing & Observability
 
 **Execution Trace**:
-The complete record of a single question's run across the Planner, Worker, and Reviewer stages, keyed by Trace ID. Contains a nested Retrieval Trace when the Doc Retriever was used.
+The complete record of a single completed question's run across the Planner, Worker, and Reviewer stages, keyed by Trace ID. Includes an outcome (`success`, `recovered`, or `degraded`) and a nested Retrieval Trace when the Doc Retriever was used. Terminal failures are logged at the workflow boundary with `outcome=failed`. The provider SDK's bounded retries remain enabled, but the current LangChain/OpenAI client integration exposes no stable retry-attempt callback to the runtime; `recovered` is therefore reserved and not emitted.
 _Avoid_: Run Log, Execution Record
 
 **Retrieval Trace**:
-A nested trace of one Hybrid Retrieval invocation: vector result count, keyword result count, merged count, reranked count, final sources, and an overall duration, broken down by sub-stage into vector search, keyword search, merge, and rerank timings (each `None`, not `0`, when that sub-stage was never measured). Always contained within an Execution Trace, never standalone.
+A nested trace of one Hybrid Retrieval invocation: vector and keyword result counts and completion statuses, merged count, reranked count, final sources, whether fallback was used, and an overall duration broken down by sub-stage into vector search, keyword search, merge, and rerank timings (each `None`, not `0`, when that sub-stage was never measured). Failed strategy and reranker error types are recorded without raw exception details. Always contained within an Execution Trace, never standalone.
 _Avoid_: Retrieval Log
+
+**Evidence Abstention**:
+The Reviewer’s deterministic response when Doc Retriever returns no sources. It does not invoke the Reviewer LLM and does not treat a successful empty search as a retrieval failure.
+_Avoid_: Retrieval Failure
 
 **Trace ID**:
 The identifier generated per question that ties together all logs, state, and the Execution Trace for that question. Used as the correlation ID in structured logs and as the LangGraph thread ID.

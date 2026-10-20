@@ -2,8 +2,17 @@ from typing import Any, Optional
 from langchain_openai import ChatOpenAI
 
 
+LLM_MAX_RETRIES = 2
+LLM_REQUEST_TIMEOUT_SECONDS = 30
+
+
 def get_llm(model="gpt-5.4-mini", temperature=0):
-    return ChatOpenAI(model=model, temperature=temperature)
+    return ChatOpenAI(
+        model=model,
+        temperature=temperature,
+        max_retries=LLM_MAX_RETRIES,
+        request_timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+    )
 
 
 def extract_usage(ai_message: Any, model_name: str) -> Optional[dict]:

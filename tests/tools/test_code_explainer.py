@@ -5,6 +5,7 @@ interface. The LLM boundary (app.tools.code_explainer.get_llm) is
 mocked so these run without network access or API cost.
 """
 import pytest
+from structlog.testing import capture_logs
 
 from app.contracts.tools import CodeInput
 from app.tools.code_explainer import code_explainer
@@ -12,6 +13,18 @@ from app.tools.code_explainer import code_explainer
 
 @pytest.mark.unit
 class TestCodeExplainer:
+    def test_does_not_log_source_code(self, mocker):
+        secret = "code-private-needle-a704"
+        fake_llm = mocker.Mock()
+        fake_llm.model_name = "gpt-5.4-mini"
+        fake_llm.invoke.return_value = mocker.Mock(content="explained", usage_metadata=None)
+        mocker.patch("app.tools.code_explainer.get_llm", return_value=fake_llm)
+
+        with capture_logs() as logs:
+            code_explainer(CodeInput(code=f"def secret(): return '{secret}'"))
+
+        assert all(secret not in repr(event) for event in logs)
+
     def test_returns_the_llm_response_content_as_explanation(self, mocker):
         fake_llm = mocker.Mock()
         fake_llm.invoke.return_value = mocker.Mock(content="this adds two numbers", usage_metadata=None)

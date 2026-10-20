@@ -9,6 +9,7 @@ from datetime import datetime
 
 import pytest
 
+from app.contracts.trace import RetrievalTrace
 from app.tracing import build_execution_trace
 
 
@@ -42,6 +43,42 @@ def make_full_state(**overrides) -> dict:
 
 @pytest.mark.unit
 class TestBuildExecutionTrace:
+    def test_marks_normal_execution_as_success(self):
+        trace = build_execution_trace(make_full_state(selected_tool="none"))
+
+        assert trace.outcome == "success"
+        assert trace.to_dict()["outcome"] == "success"
+
+    def test_marks_retrieval_fallback_as_degraded(self):
+        trace = build_execution_trace(
+            make_full_state(
+                retrieval_trace=RetrievalTrace(
+                    query="what is X?",
+                    vector_search_status="failed",
+                    keyword_search_status="succeeded",
+                    fallback_used=True,
+                ),
+                retrieved_sources=["reliability.md"],
+            )
+        )
+
+        assert trace.outcome == "degraded"
+
+    def test_marks_empty_document_retrieval_abstention_as_degraded(self):
+        trace = build_execution_trace(
+            make_full_state(
+                retrieval_trace=RetrievalTrace(
+                    query="what is X?",
+                    vector_search_status="succeeded",
+                    keyword_search_status="succeeded",
+                ),
+                retrieved_sources=[],
+                final_answer="I couldn't find relevant documentation.",
+            )
+        )
+
+        assert trace.outcome == "degraded"
+
     def test_builds_one_stage_event_per_stage_with_correct_snapshots(self):
         state = make_full_state()
 

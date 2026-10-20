@@ -15,7 +15,7 @@ def planner_node(state: AgentState) -> AgentState:
     logger.info(
         "node_started",
         node="planner_node",
-        input=state.user_input
+        input_length=len(state.user_input),
     )
 
     started = datetime.now()
@@ -26,7 +26,7 @@ def planner_node(state: AgentState) -> AgentState:
     logger.info(
         "tool_decision_made",
         selected_tool=tool_decision.tool,
-        reason=tool_decision.reason
+        reason_length=len(tool_decision.reason),
     )
 
     state.plan = tool_decision.reason
@@ -74,7 +74,7 @@ def get_tool_decision(question: str) -> tuple[ToolDecision, Optional[dict]]:
 
     logger.info(
         "get_tool_decision",
-        question=question,
+        question_length=len(question),
         prompt_length=len(tool_selection_prompt)
     )
 
@@ -89,7 +89,7 @@ def get_tool_decision(question: str) -> tuple[ToolDecision, Optional[dict]]:
     logger.debug(
         "get_tool_decision_response",
         tool=response.tool,
-        reason=response.reason
+        reason_length=len(response.reason),
     )
 
     return response, token_usage

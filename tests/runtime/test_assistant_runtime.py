@@ -7,8 +7,13 @@ side effects at module load time", so each is mocked at its own
 defining module, not at assistant_runtime's import site.
 """
 import pytest
+import httpx
+import openai
+from structlog.testing import capture_logs
 
 from app.contracts.agent import AgentState
+from app.contracts.retrieval import RetrievalUnavailableError
+from app.contracts.tools import InvalidToolSelectionError, ToolExecutionError
 from app.runtime.assistant_runtime import AssistantRuntime
 
 
@@ -63,6 +68,30 @@ class TestAssistantRuntimeRunQuestion:
         }
         base.update(overrides)
         return base
+
+    def test_does_not_log_question_plan_or_answer_content(self, mocker):
+        secret = "runtime-private-needle-2c3e"
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.return_value = self._final_result(
+            user_input=secret,
+            plan=secret,
+            tool_input={"query": secret},
+            tool_output=secret,
+            draft_answer=secret,
+            final_answer=secret,
+            review_feedback=secret,
+        )
+        mocker.patch(
+            "app.runtime.assistant_runtime.build_execution_trace",
+            return_value=mocker.Mock(trace_id="t-private"),
+        )
+
+        with capture_logs() as logs:
+            runtime.run_question(secret, trace_id="t-private")
+
+        assert all(secret not in repr(event) for event in logs)
 
     def test_calls_setup_automatically_when_not_yet_initialized(self, mock_setup_dependencies, mocker):
         mock_setup_dependencies.invoke.return_value = self._final_result()
@@ -121,6 +150,88 @@ class TestAssistantRuntimeRunQuestion:
         runtime._is_initialized = True
         runtime.graph = mocker.Mock()
         runtime.graph.invoke.side_effect = RuntimeError("graph exploded")
+        error_log = mocker.patch("app.runtime.assistant_runtime.logger.error")
 
         with pytest.raises(RuntimeError, match="graph exploded"):
             runtime.run_question("hello", trace_id="t-1")
+
+        error_log.assert_called_once_with(
+            "workflow_execution_failed",
+            trace_id="t-1",
+            outcome="failed",
+            failure_category="workflow_execution_error",
+            error_type="RuntimeError",
+        )
+
+    def test_logs_total_retrieval_failure_as_failed(self, mocker):
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.side_effect = RetrievalUnavailableError("private provider details")
+        error_log = mocker.patch("app.runtime.assistant_runtime.logger.error")
+
+        with pytest.raises(RetrievalUnavailableError):
+            runtime.run_question("hello", trace_id="t-2")
+
+        error_log.assert_called_once_with(
+            "workflow_execution_failed",
+            trace_id="t-2",
+            outcome="failed",
+            failure_category="retrieval_unavailable",
+            error_type="RetrievalUnavailableError",
+        )
+
+    @pytest.mark.parametrize(
+        ("failure", "category", "error_type"),
+        [
+            (
+                InvalidToolSelectionError("invalid selection"),
+                "invalid_tool_selection",
+                "InvalidToolSelectionError",
+            ),
+            (
+                ToolExecutionError("tool failed"),
+                "tool_execution_error",
+                "ToolExecutionError",
+            ),
+        ],
+    )
+    def test_logs_tool_failures_with_structured_category(
+        self, mocker, failure, category, error_type
+    ):
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.side_effect = failure
+        error_log = mocker.patch("app.runtime.assistant_runtime.logger.error")
+
+        with pytest.raises(type(failure)):
+            runtime.run_question("hello", trace_id="t-tool")
+
+        error_log.assert_called_once_with(
+            "workflow_execution_failed",
+            trace_id="t-tool",
+            outcome="failed",
+            failure_category=category,
+            error_type=error_type,
+        )
+
+    def test_logs_provider_timeout_as_operation_timeout(self, mocker):
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.side_effect = openai.APITimeoutError(
+            request=httpx.Request("POST", "https://provider.test")
+        )
+        error_log = mocker.patch("app.runtime.assistant_runtime.logger.error")
+
+        with pytest.raises(openai.APITimeoutError):
+            runtime.run_question("hello", trace_id="t-3")
+
+        error_log.assert_called_once_with(
+            "workflow_execution_failed",
+            trace_id="t-3",
+            outcome="failed",
+            failure_category="operation_timeout",
+            error_type="APITimeoutError",
+        )

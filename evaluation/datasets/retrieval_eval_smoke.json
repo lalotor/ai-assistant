@@ -17,15 +17,13 @@
   {
     "question": "Considering only your internal documentation, what inputs does DiffService take?",
     "expected_keywords": [
-      "JodID",
+      "JobId",
       "SystemAData",
       "SystemBData",
       "Algorithm"
     ],
     "expected_sources": [
-      "data/docs/java-service/src/main/java/com/example/controller/ProcessController.java",
-      "data/docs/architecture/high-level-design.md",
-      "data/docs/src/api.py"
+      "data/docs/java-service/src/main/java/com/example/controller/ProcessController.java"
     ],
     "category": "doc_retriever"
   }

@@ -1,0 +1,44 @@
+{
+  "questions": 33,
+  "evaluated": 33,
+  "latency_ms": {
+    "avg": 5913.336333333333,
+    "p50": 3655.9750000000004,
+    "p95": 12486.459
+  },
+  "stage_latency_ms_avg": {
+    "planner": 1278.2014545454547,
+    "worker": 3250.8375454545453,
+    "reviewer": 1382.8587272727273
+  },
+  "retrieval_stage_latency_ms_avg": {
+    "vector_search": 582.4953333333333,
+    "keyword_search": 31.435666666666666,
+    "merge": 0.009952380952380952,
+    "rerank": 636.284619047619
+  },
+  "scores": {
+    "avg_answer_score": 0.8553030303030303,
+    "avg_retrieval_score": 0.5151515151515151
+  },
+  "llm_calls": {
+    "total": 99,
+    "avg_per_question": 3.0,
+    "stage_avg": {
+      "planner": 1.0,
+      "worker": 1.0,
+      "reviewer": 1.0
+    }
+  },
+  "tokens": {
+    "total_input_tokens": 102559,
+    "total_output_tokens": 30284,
+    "total_tokens": 132843,
+    "avg_tokens_per_question": 4025.5454545454545
+  },
+  "source_results_files": [
+    "evaluation/results/eval_2026-10-19_21-52-05.json",
+    "evaluation/results/eval_2026-10-19_21-53-28.json",
+    "evaluation/results/eval_2026-10-19_21-54-44.json"
+  ]
+}

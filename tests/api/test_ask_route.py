@@ -87,12 +87,14 @@ class TestAskRoute:
     def test_translates_a_runtime_exception_into_a_500_without_leaking_details(self, mocker):
         mock_runtime = mocker.Mock()
         mock_runtime.run_question.side_effect = RuntimeError("graph exploded with a secret path")
+        error_log = mocker.patch("app.api.routes.ask.logger.error")
         client = TestClient(make_app(mock_runtime))
 
         response = client.post("/ask", json={"question": "hello"})
 
         assert response.status_code == 500
         assert "graph exploded" not in response.json()["detail"]
+        assert "secret path" not in str(error_log.call_args)
 
     def test_falls_back_to_the_caller_supplied_trace_id_when_no_execution_trace_is_returned(self, mocker):
         mock_runtime = mocker.Mock()

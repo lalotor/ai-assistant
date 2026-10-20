@@ -280,7 +280,12 @@ if selected_tool == "architecture_advisor":
 class ReviewResult(BaseModel):
     final_answer: str
     feedback: str
+    evidence_sufficient: bool
 ```
+
+For Doc Retriever answers, the Reviewer marks whether the retrieved excerpts
+directly support the response. If it reports insufficient evidence, the
+application returns a standard abstention instead of the proposed answer.
 
 ---
 

@@ -30,3 +30,9 @@ class ReviewResult(BaseModel):
 
     final_answer: str = Field(description="The final answer to the user's question")
     feedback: str = Field(description="Feedback about the draft answer")
+    evidence_sufficient: bool = Field(
+        description=(
+            "Whether the provided tool output contains enough direct evidence "
+            "to support the answer to the user's question"
+        )
+    )

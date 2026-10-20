@@ -57,7 +57,9 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
     except Exception as exc:
         logger.error(
             "ask_request_failed",
-            error=str(exc),
+            trace_id=body.trace_id,
+            outcome="failed",
+            failure_category="request_execution_error",
             error_type=type(exc).__name__,
         )
         raise HTTPException(

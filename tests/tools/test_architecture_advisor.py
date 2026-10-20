@@ -7,6 +7,7 @@ public interface. The LLM boundary
 network access or API cost.
 """
 import pytest
+from structlog.testing import capture_logs
 
 from app.contracts.tools import ArchInput
 from app.tools.architecture_advisor import architecture_advisor
@@ -14,6 +15,18 @@ from app.tools.architecture_advisor import architecture_advisor
 
 @pytest.mark.unit
 class TestArchitectureAdvisor:
+    def test_does_not_log_question_content(self, mocker):
+        secret = "architecture-private-needle-9f02"
+        fake_llm = mocker.Mock()
+        fake_llm.model_name = "gpt-5.4-mini"
+        fake_llm.invoke.return_value = mocker.Mock(content="advice", usage_metadata=None)
+        mocker.patch("app.tools.architecture_advisor.get_llm", return_value=fake_llm)
+
+        with capture_logs() as logs:
+            architecture_advisor(ArchInput(question=secret))
+
+        assert all(secret not in repr(event) for event in logs)
+
     def test_returns_the_llm_response_content_as_advice(self, mocker):
         fake_llm = mocker.Mock()
         fake_llm.invoke.return_value = mocker.Mock(content="use microservices", usage_metadata=None)

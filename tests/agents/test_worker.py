@@ -9,9 +9,11 @@ real tool, since worker_node's job is dispatch, not tool correctness
 adapters).
 """
 import pytest
+from structlog.testing import capture_logs
 
 from app.agents.worker import worker_node
 from app.contracts.agent import AgentState
+from app.contracts.retrieval import RetrievalUnavailableError
 from app.contracts.trace import RetrievalTrace
 
 
@@ -30,6 +32,27 @@ def fake_tools(invoke_fn) -> dict:
 
 @pytest.mark.unit
 class TestWorkerNodeDispatch:
+    def test_logs_tool_selection_without_query_content(self, mocker):
+        sensitive_query = "customer-secret-needle-7f92"
+        mocker.patch(
+            "app.agents.worker.TOOLS",
+            {"doc_retriever": {"invoke": mocker.Mock(return_value={
+                "result": "found", "sources": [], "retrieval_trace": None
+            })}},
+        )
+        state = make_state(
+            "doc_retriever",
+            tool_input={"query": sensitive_query},
+            user_input=sensitive_query,
+        )
+
+        with capture_logs() as logs:
+            worker_node(state)
+
+        assert any(event.get("selected_tool") == "doc_retriever" for event in logs)
+        assert all(sensitive_query not in repr(event) for event in logs)
+        assert all("tool_input" not in event for event in logs)
+
     def test_dispatches_through_the_registrys_invoke_adapter(self, mocker):
         mocker.patch(
             "app.agents.worker.TOOLS",
@@ -88,25 +111,45 @@ class TestWorkerNodeDispatch:
         assert "Error" not in result.tool_output
         assert result.draft_answer == "Tool result:\nwhat's 2+2?"
 
-    def test_unknown_tool_produces_an_error_result_without_raising(self):
+    def test_unknown_tool_fails_without_creating_a_reviewable_draft(self):
         state = make_state("not_a_real_tool")
 
-        result = worker_node(state)
+        with pytest.raises(ValueError, match="not_a_real_tool"):
+            worker_node(state)
 
-        assert "Error" in result.tool_output
-        assert "not_a_real_tool" in result.tool_output
+        assert state.draft_answer is None
 
-    def test_tool_exception_is_caught_and_reported_as_an_error_result(self, mocker):
+    def test_tool_exception_propagates_without_creating_a_reviewable_draft(self, mocker):
+        error_log = mocker.patch("app.agents.worker.logger.error")
         mocker.patch(
             "app.agents.worker.TOOLS",
             {"doc_retriever": {"invoke": mocker.Mock(side_effect=RuntimeError("boom"))}},
         )
         state = make_state("doc_retriever", tool_input={"query": "x"})
 
-        result = worker_node(state)
+        with pytest.raises(RuntimeError, match="Tool execution failed"):
+            worker_node(state)
 
-        assert "Error" in result.tool_output
-        assert "boom" in result.tool_output
+        assert state.draft_answer is None
+        assert error_log.call_args.kwargs == {
+            "selected_tool": "doc_retriever",
+            "failure_category": "tool_execution_error",
+            "error_type": "RuntimeError",
+        }
+
+    def test_retrieval_unavailable_error_propagates_without_creating_reviewable_draft(self, mocker):
+        mocker.patch(
+            "app.agents.worker.TOOLS",
+            {"doc_retriever": {"invoke": mocker.Mock(
+                side_effect=RetrievalUnavailableError("Both retrieval strategies failed.")
+            )}},
+        )
+        state = make_state("doc_retriever", tool_input={"query": "x"})
+
+        with pytest.raises(RetrievalUnavailableError):
+            worker_node(state)
+
+        assert state.draft_answer is None
 
     def test_records_stage_timings(self, mocker):
         mocker.patch(
@@ -159,27 +202,25 @@ class TestWorkerNodeLlmUsage:
         assert result.stage_llm_usage["worker"]["llm_calls"] == 0
         assert result.stage_llm_usage["worker"]["token_usage"] is None
 
-    def test_unknown_tool_records_zero_llm_calls(self):
-        """Nothing ran, so nothing was called - zero LLM calls, not an
-        error or a missing key."""
+    def test_unknown_tool_does_not_create_llm_usage_or_a_draft(self):
         state = make_state("not_a_real_tool")
 
-        result = worker_node(state)
+        with pytest.raises(ValueError):
+            worker_node(state)
 
-        assert result.stage_llm_usage["worker"]["llm_calls"] == 0
-        assert result.stage_llm_usage["worker"]["token_usage"] is None
+        assert state.draft_answer is None
 
-    def test_tool_exception_records_zero_llm_calls(self, mocker):
+    def test_tool_exception_does_not_create_llm_usage_or_a_draft(self, mocker):
         mocker.patch(
             "app.agents.worker.TOOLS",
             {"doc_retriever": {"invoke": mocker.Mock(side_effect=RuntimeError("boom"))}},
         )
         state = make_state("doc_retriever", tool_input={"query": "x"})
 
-        result = worker_node(state)
+        with pytest.raises(RuntimeError):
+            worker_node(state)
 
-        assert result.stage_llm_usage["worker"]["llm_calls"] == 0
-        assert result.stage_llm_usage["worker"]["token_usage"] is None
+        assert state.draft_answer is None
 
     def test_tolerates_an_invoke_outcome_missing_the_new_keys(self, mocker):
         """Defensive: an outcome dict predating Week 9's llm_calls/

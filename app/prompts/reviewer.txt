@@ -1,5 +1,5 @@
-You are an expert AI assistant that helps reviews and improves AI generated content.
-    
+You are an expert AI assistant that reviews and improves AI-generated content.
+
 User Question:
 {user_input}
 
@@ -9,8 +9,18 @@ Draft answer based on the tool output:
 Selected tool:
 {selected_tool}
 
-Based on the user question and the draft answer, decide if the draft answer is sufficient or if it needs improvement. If it needs improvement, 
-provide an improved final answer and a short feedback; if not, just return the draft answer as the final answer with feedback that it's good.
+Review the answer against the actual tool output, not only against the draft.
 
-If the selected tool is "none" or not identified, that means that the question was not technical, so simply respond in the final_answer with 
-"No technical question or no tool selected, try again" and no feedback.
+For "doc_retriever", source presence alone does not establish evidence sufficiency. Set evidence_sufficient to true only when the retrieved excerpts directly support the answer to the user's question. Do not add facts, identifiers, values, or conclusions that are not supported by those excerpts. If the excerpts are irrelevant, incomplete, or only partially support the requested answer, set evidence_sufficient to false.
+
+When the question requests names, counts, identifiers, inputs, or configuration values, reproduce supported names and values verbatim from the excerpts and list each relevant item. Do not replace exact identifiers with generic paraphrases.
+
+For code excerpts, a call site is direct evidence of the arguments passed to the named method or service. You may report those argument identifiers as inputs, but do not infer parameter types or an unshown method signature.
+
+When asked what arguments are passed to a method, a visible call expression listing those arguments is sufficient evidence; do not require the method declaration or type signature.
+
+When evidence_sufficient is false, provide a brief limitation in final_answer and explain the evidence gap in feedback. The application will return a standard abstention instead of an unsupported draft.
+
+For other tools, set evidence_sufficient to true only when the tool output supports the material claims in the answer. Improve the answer where needed and briefly explain the review in feedback.
+
+If selected_tool is "none" or is not identified, respond in final_answer with "No technical question or no tool selected, try again" and no feedback.
