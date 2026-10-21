@@ -14,28 +14,43 @@ import json
 import os
 from typing import Any
 
-from evaluation.report import _avg, build_baseline_report
+from evaluation.report import _avg, build_baseline_report, result_token_totals
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPORTS_DIR = os.path.join(ROOT_DIR, "evaluation", "reports")
 
-_STAGES = ("planner", "worker", "reviewer", "reviewer_final", "revision")
 
-
-def load_results_files(paths: list[str]) -> list[dict[str, Any]]:
+def load_results_files(
+    paths: list[str],
+    *,
+    expected_mode: str | None = None,
+) -> list[dict[str, Any]]:
     """Load result dicts from one or more run files.
 
     A path containing ``*`` is expanded as a glob; this lets a caller
-    compare a set of repeated runs without listing every filename.
+    compare a set of repeated runs without listing every filename. When
+    ``expected_mode`` is supplied, a file whose summary declares a different
+    mode is rejected so a single-pass run cannot be mislabeled as revision
+    (or vice versa). Older files without a mode remain readable.
     """
     results: list[dict[str, Any]] = []
     for path in paths:
-        matches = sorted(glob.glob(path)) if any(ch in path for ch in "*?[") else [path]
+        matches = (
+            sorted(glob.glob(path))
+            if any(ch in path for ch in "*?[")
+            else [path]
+        )
         if not matches:
             raise FileNotFoundError(f"No evaluation results matched: {path}")
         for match in matches:
             with open(match, encoding="utf-8") as f:
                 data = json.load(f)
+            mode = (data.get("summary") or {}).get("mode")
+            if expected_mode is not None and mode is not None and mode != expected_mode:
+                raise ValueError(
+                    f"Expected a {expected_mode} result file, but {match} "
+                    f"declares mode={mode!r}."
+                )
             results.extend(data.get("results", []))
     return results
 
@@ -131,7 +146,14 @@ def compare_results(
         },
         "review": {
             "baseline": baseline_report["review"],
-            "revision": revision_report["review"],
+            "revision": {
+                **revision_report["review"],
+                "questions_with_revision": sum(
+                    1
+                    for row in per_question
+                    if (row["revision"] or {}).get("revision_attempted_runs", 0) > 0
+                ),
+            },
         },
         "per_question": per_question,
     }
@@ -184,6 +206,10 @@ def format_comparison_markdown(
             f"({delta(latency['delta_avg_ms'], ' ms', 1)})"
         ),
         (
+            f"Latency P50:       {fmt(latency['baseline']['p50'], ' ms', 1)} -> "
+            f"{fmt(latency['revision']['p50'], ' ms', 1)}"
+        ),
+        (
             f"Latency P95:       {fmt(latency['baseline']['p95'], ' ms', 1)} -> "
             f"{fmt(latency['revision']['p95'], ' ms', 1)}"
         ),
@@ -202,19 +228,26 @@ def format_comparison_markdown(
             f"({delta(tokens['delta_avg_per_question'], '', 0)})"
         ),
         (
-            "Revision attempts: "
-            f"{review['revision']['revisions_attempted']} across revision runs; "
-            "outcomes: "
+            "Review outcomes:   baseline: "
+            f"{_format_outcomes(review['baseline']['outcomes'])}; revision: "
             f"{_format_outcomes(review['revision']['outcomes'])}"
+        ),
+        (
+            "Revision attempts: "
+            f"{review['revision']['revisions_attempted']} across revision runs "
+            f"on {review['revision']['questions_with_revision']} of "
+            f"{comparison['questions']} questions; final answers changed vs "
+            f"draft: {review['revision'].get('answers_changed', 0)}"
         ),
         "",
         "## Per-question",
         "",
         (
             "| Question | Base score | Rev score | Δ score | Base retrieval | "
-            "Rev retrieval | Δ retrieval | Δ latency ms | Rev count | Outcome |"
+            "Rev retrieval | Δ retrieval | Δ latency ms | Δ calls | Δ tokens | "
+            "Rev count | Changed | Outcome |"
         ),
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
 
     for row in comparison["per_question"]:
@@ -223,7 +256,8 @@ def format_comparison_markdown(
         lines.append(
             "| {question} | {base_score} | {rev_score} | {d_score} | "
             "{base_retrieval} | {rev_retrieval} | {d_retrieval} | "
-            "{d_latency} | {rev_count} | {outcome} |".format(
+            "{d_latency} | {d_calls} | {d_tokens} | {rev_count} | "
+            "{changed} | {outcome} |".format(
                 question=_escape(row["question"]),
                 base_score=fmt(baseline.get("score")),
                 rev_score=fmt(revision.get("score")),
@@ -232,9 +266,12 @@ def format_comparison_markdown(
                 rev_retrieval=fmt(revision.get("score_sources")),
                 d_retrieval=delta(row.get("retrieval_delta")),
                 d_latency=delta(row.get("latency_delta_ms"), "", 0),
+                d_calls=delta(row.get("llm_calls_delta"), "", 2),
+                d_tokens=delta(row.get("tokens_delta"), "", 0),
                 rev_count=revision.get("revision_attempted_runs", 0)
                 if revision
                 else 0,
+                changed=revision.get("answers_changed", 0) if revision else 0,
                 outcome=_format_outcomes(revision.get("review_outcomes", {})),
             )
         )
@@ -251,6 +288,10 @@ def format_comparison_markdown(
         (
             "Cost signal: revision adds one revision call and one final-review "
             "call only on runs where the reviewer requests revision."
+        ),
+        (
+            "Changed counts final answers that differ from the Worker draft; "
+            "this includes single-pass reviewer edits as well as revisions."
         ),
         (
             "Caveat: keyword/source overlap is a proxy for answer quality; "
@@ -346,7 +387,7 @@ def _per_question_metrics(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
         if r["timing_metrics"]["trace"].get("duration_ms") is not None
     ]
     calls = [r["llm_usage"].get("total_llm_calls", 0) for r in timed]
-    tokens = [_result_tokens(r) for r in timed]
+    tokens = [sum(result_token_totals(r)) for r in timed]
     outcomes = Counter(
         r.get("review_outcome") for r in runs if r.get("review_outcome")
     )
@@ -361,6 +402,7 @@ def _per_question_metrics(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
         "tokens": _avg(tokens),
         "revision_attempted_runs": sum(1 for count in revision_counts if count > 0),
         "revision_count_avg": _avg([float(count) for count in revision_counts]),
+        "answers_changed": sum(1 for r in runs if r.get("answer_changed")),
         "review_outcomes": dict(sorted(outcomes.items())),
     }
 
@@ -388,18 +430,6 @@ def _score_summary(
         "degraded": statuses.get("degraded", 0),
         "missing": statuses.get("missing", 0),
     }
-
-
-def _result_tokens(result: dict[str, Any]) -> int:
-    usage = result.get("llm_usage") or {}
-    total = 0
-    for stage in _STAGES:
-        stage_usage = usage.get(stage) or {}
-        token_usage = stage_usage.get("token_usage")
-        if token_usage:
-            total += token_usage.get("input_tokens", 0)
-            total += token_usage.get("output_tokens", 0)
-    return total
 
 
 def _per_run(total: int | None, results: list[dict[str, Any]]) -> float | None:
@@ -466,8 +496,8 @@ def main() -> None:
     args = parser.parse_args()
 
     comparison = compare_results(
-        load_results_files(args.baseline),
-        load_results_files(args.revision),
+        load_results_files(args.baseline, expected_mode="single_pass"),
+        load_results_files(args.revision, expected_mode="revision"),
     )
     json_path, markdown_path = write_comparison_report(
         comparison,

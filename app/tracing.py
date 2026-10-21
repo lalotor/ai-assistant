@@ -1,10 +1,8 @@
 import structlog
-from app.contracts.trace import ExecutionTrace, ReviewTrace, StageEvent
+from app.contracts.trace import ExecutionTrace, ReviewTrace, STAGE_NAMES, StageEvent
 from app.utils.util import calculate_duration_ms
 
 logger = structlog.get_logger()
-
-_KNOWN_STAGES = ("planner", "worker", "reviewer", "revision", "reviewer_final")
 
 
 def build_failed_execution_trace(
@@ -13,15 +11,21 @@ def build_failed_execution_trace(
     failed_stage: str,
     failure_category: str,
     failure_type: str,
+    review_state: dict | None = None,
 ) -> ExecutionTrace:
-    """Build a content-free execution trace for a failed graph invocation."""
+    """Build a content-free execution trace for a failed graph invocation.
+
+    ``review_state`` carries only structured decisions/counts, never feedback
+    or document content, so a failure after review can still show what the
+    reviewer decided before the failing stage.
+    """
     state = {
         "stage_timings": stage_timings,
         "stage_llm_usage": {},
     }
     events = {
         stage: _build_stage_event(state, stage, {}, {})
-        for stage in _KNOWN_STAGES
+        for stage in STAGE_NAMES
     }
     if failed_stage not in events:
         events[failed_stage] = _build_stage_event(state, failed_stage, {}, {})
@@ -42,6 +46,17 @@ def build_failed_execution_trace(
         else None
     )
 
+    review_trace = None
+    if review_state is not None:
+        review_trace = ReviewTrace(
+            initial_decision=review_state.get("initial_decision"),
+            revision_attempted=bool(review_state.get("revision_attempted")),
+            revision_count=review_state.get("revision_count", 0),
+            final_decision=review_state.get("final_decision"),
+            final_feedback=None,
+            outcome=review_state.get("outcome"),
+        )
+
     return ExecutionTrace(
         trace_id=trace_id,
         started_at=started_at,
@@ -53,7 +68,7 @@ def build_failed_execution_trace(
         retrieval_trace=None,
         final_answer="",
         revision_events=revision_events,
-        review_trace=None,
+        review_trace=review_trace,
         outcome="failed",
         failed_stage=failed_stage,
         failure_category=failure_category,

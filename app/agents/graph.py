@@ -33,9 +33,31 @@ def _stage_node(stage: str, node: Callable[[AgentState], AgentState]) -> Callabl
                 failure_category=_failure_category(stage, exc),
                 failure_type=type(exc).__name__,
                 stage_timings=stage_timings,
+                review_state=_failed_review_state(state, stage),
             ) from exc
 
     return invoke
+
+
+def _failed_review_state(state: AgentState, stage: str) -> dict | None:
+    """Safe decision metadata for a failed trace; no feedback/content."""
+    review_stages = ("reviewer", "revision", "reviewer_final")
+    if (
+        stage not in review_stages
+        and state.initial_review_decision is None
+        and state.revision_count == 0
+    ):
+        return None
+    return {
+        "initial_decision": state.initial_review_decision,
+        "revision_attempted": (
+            state.revision_count > 0 or stage in ("revision", "reviewer_final")
+        ),
+        "revision_count": state.revision_count,
+        "final_decision": None,
+        "final_feedback": None,
+        "outcome": None,
+    }
 
 
 def _failure_category(stage: str, error: Exception) -> str:
@@ -56,28 +78,17 @@ def route_after_review(state: AgentState) -> str:
     The revision budget is enforced here, not in prompt text: even if the
     reviewer asks for another revision on the final pass, the graph ends.
     """
-    revision_enabled = _state_value(state, "revision_enabled", False)
-    review_decision = _state_value(state, "review_decision")
-    revision_count = _state_value(state, "revision_count", 0)
-    revision_feedback = _state_value(state, "revision_feedback") or ""
-    selected_tool = _state_value(state, "selected_tool")
+    revision_feedback = state.revision_feedback or ""
 
     if (
-        revision_enabled
-        and selected_tool not in (None, "none")
-        and review_decision == "revise"
-        and revision_count < 1
+        state.revision_enabled
+        and state.selected_tool not in (None, "none")
+        and state.review_decision == "revise"
+        and state.revision_count < 1
         and revision_feedback.strip()
     ):
         return "revision"
     return "end"
-
-
-def _state_value(state: AgentState, key: str, default=None):
-    """Read a field from either the Pydantic state or a dict state."""
-    if isinstance(state, dict):
-        return state.get(key, default)
-    return getattr(state, key, default)
 
 
 def get_graph():

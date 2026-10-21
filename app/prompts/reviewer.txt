@@ -9,6 +9,9 @@ Draft answer based on the tool output:
 Selected tool:
 {selected_tool}
 
+Evidence context:
+{evidence_context}
+
 Review the answer against the actual tool output, not only against the draft.
 
 Answer-quality criteria: correctness, evidence support, relevance, and completeness.

@@ -273,6 +273,7 @@ class TestRevisionAggregation:
         assert report["review"] == {
             "revisions_attempted": 2,
             "revision_count_total": 2,
+            "answers_changed": 0,
             "outcomes": {
                 "approved": 1,
                 "budget_exhausted": 1,

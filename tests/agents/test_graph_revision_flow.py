@@ -259,6 +259,30 @@ class TestRevisionGraphFlow:
         assert exc_info.value.failure_category == "reviewer_failure"
         assert exc_info.value.failure_type == "ValueError"
 
+    def test_final_reviewer_failure_keeps_the_initial_decision_in_safe_metadata(self, mocker):
+        patch_planner(mocker)
+        patch_worker(mocker)
+        structured = Mock()
+        structured.invoke.side_effect = [
+            {"raw": Mock(usage_metadata=None), "parsed": revise_then("revise")},
+            ValueError("malformed final review output"),
+        ]
+        reviewer_llm = Mock(
+            model_name="gpt-5.4-mini",
+            with_structured_output=Mock(return_value=structured),
+        )
+        mocker.patch("app.agents.reviewer.get_llm", return_value=reviewer_llm)
+        patch_revision(mocker, content="the revised answer")
+
+        with pytest.raises(WorkflowStageError) as exc_info:
+            get_graph().invoke(make_state())
+
+        assert exc_info.value.stage == "reviewer_final"
+        assert exc_info.value.failure_category == "reviewer_final_failure"
+        assert exc_info.value.review_state["initial_decision"] == "revise"
+        assert exc_info.value.review_state["revision_attempted"] is True
+        assert exc_info.value.review_state["revision_count"] == 1
+
     def test_revision_failure_fails_the_graph_without_returning_the_draft(self, mocker):
         patch_planner(mocker)
         patch_worker(mocker)
@@ -272,3 +296,11 @@ class TestRevisionGraphFlow:
         assert exc_info.value.failure_category == "operation_timeout"
         assert exc_info.value.failure_type == "TimeoutError"
         assert "revision" in exc_info.value.stage_timings
+        assert exc_info.value.review_state == {
+            "initial_decision": "revise",
+            "revision_attempted": True,
+            "revision_count": 0,
+            "final_decision": None,
+            "final_feedback": None,
+            "outcome": None,
+        }

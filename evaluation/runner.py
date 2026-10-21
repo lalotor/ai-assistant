@@ -307,6 +307,10 @@ def run_evaluation(
                 "tool_output": response.tool_output,
                 "draft_answer": response.draft_answer,
                 "initial_draft_answer": response.initial_draft_answer,
+                "answer_changed": (
+                    response.initial_draft_answer is not None
+                    and response.final_answer != response.initial_draft_answer
+                ),
                 "review_feedback": response.review_feedback,
                 "initial_review_decision": (
                     trace.review_trace.initial_decision if trace.review_trace else None
@@ -466,6 +470,7 @@ def _save_progress(
     budget_exhausted = sum(
         1 for r in results if r.get("review_outcome") == "budget_exhausted"
     )
+    answers_changed = sum(1 for r in results if r.get("answer_changed"))
 
     summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
@@ -482,6 +487,7 @@ def _save_progress(
         "revisions_attempted": revisions_attempted,
         "abstained": abstained,
         "budget_exhausted": budget_exhausted,
+        "answers_changed": answers_changed,
     }
 
     with open(results_file, "w", encoding="utf-8") as f:

@@ -3,9 +3,10 @@ from typing import Optional
 
 import structlog
 
-from app.utils.llm import get_llm, extract_usage
+from app.agents.stage import record_stage_metrics
 from app.contracts.agent import AgentState, ReviewResult
 from app.prompts import format_prompt
+from app.utils.llm import get_llm, extract_usage
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -77,6 +78,7 @@ def reviewer_node(state: AgentState) -> AgentState:
         user_input=state.user_input,
         draft_answer=state.draft_answer or "",
         selected_tool=state.selected_tool or "none",
+        evidence_context=_evidence_context(state, stage),
         revision_policy=_revision_policy(revision_allowed),
     )
 
@@ -146,7 +148,13 @@ def reviewer_node(state: AgentState) -> AgentState:
     if decision == "revise" and revision_allowed and has_actionable_feedback:
         state.revision_feedback = feedback
         state.review_outcome = None
-        _record_stage(state, stage, started, llm_calls=1, token_usage=token_usage)
+        record_stage_metrics(
+            state,
+            stage,
+            started,
+            llm_calls=1,
+            token_usage=token_usage,
+        )
         logger.info(
             "reviewer_requested_revision",
             review_stage=stage,
@@ -159,32 +167,78 @@ def reviewer_node(state: AgentState) -> AgentState:
     if decision == "revise":
         if state.revision_count > 0:
             state.review_outcome = "budget_exhausted"
-            state.final_answer = _with_budget_limitation(state.final_answer)
+            # Keep the revised draft, not the final reviewer's unapproved
+            # rewrite request, and make its provisional status explicit.
+            state.final_answer = _with_budget_limitation(state.draft_answer)
             logger.info(
                 "reviewer_budget_exhausted",
                 review_stage=stage,
             )
         else:
-            state.review_outcome = "revision_skipped"
-            logger.info(
-                "reviewer_revision_skipped",
-                reason=(
-                    "revision_disabled"
-                    if not state.revision_enabled
-                    else "no_actionable_feedback"
-                ),
-                review_stage=stage,
-            )
+            candidate = (response.final_answer or "").strip()
+            draft = (state.draft_answer or "").strip()
+            if not candidate or candidate == draft:
+                # The reviewer asked for changes but supplied no revised
+                # answer, so the draft is not reviewed. Do not return it as a
+                # successful single-pass result.
+                state.review_decision = "abstain"
+                state.final_answer = _ABSTENTION_GENERIC
+                state.review_feedback = (
+                    "The reviewer requested changes, but no revised answer was "
+                    "available in single-pass mode; abstained rather than "
+                    "returning the unreviewed draft."
+                )
+                state.review_outcome = "abstained"
+                logger.info(
+                    "reviewer_abstained",
+                    reason="revision_unavailable",
+                    review_stage=stage,
+                )
+            else:
+                state.final_answer = candidate
+                state.review_outcome = "revision_skipped"
+                logger.info(
+                    "reviewer_revision_skipped",
+                    reason=(
+                        "revision_disabled"
+                        if not state.revision_enabled
+                        else "no_actionable_feedback"
+                    ),
+                    review_stage=stage,
+                )
     else:
         state.review_outcome = "revised" if state.revision_count > 0 else "approved"
 
-    _record_stage(state, stage, started, llm_calls=1, token_usage=token_usage)
+    record_stage_metrics(
+        state,
+        stage,
+        started,
+        llm_calls=1,
+        token_usage=token_usage,
+    )
     return state
 
 
 def _review_stage(state: AgentState) -> str:
     """The timing/usage key for this reviewer pass."""
     return "reviewer" if state.revision_count == 0 else "reviewer_final"
+
+
+def _evidence_context(state: AgentState, stage: str) -> str:
+    """Give the final review the raw evidence the revised prose replaced.
+
+    The initial Worker draft is the raw tool output, so the first review
+    already sees it. The revision replaces that draft with prose, so the
+    post-revision review must receive the original evidence explicitly.
+    """
+    if stage == "reviewer":
+        return "The draft above is the Worker's raw tool output, including its evidence."
+    sources = ", ".join(state.retrieved_sources or []) or "none"
+    return (
+        "Original Worker tool output:\n"
+        f"{state.tool_output or '(none)'}\n\n"
+        f"Retrieved sources: {sources}"
+    )
 
 
 def _revision_policy(revision_allowed: bool) -> str:
@@ -219,30 +273,13 @@ def _set_abstention(
         state.initial_review_decision = "abstain"
         state.initial_review_feedback = feedback
 
-    _record_stage(state, stage, started, llm_calls=llm_calls, token_usage=token_usage)
-
-
-def _record_stage(
-    state: AgentState,
-    stage: str,
-    started: datetime,
-    *,
-    llm_calls: int,
-    token_usage: Optional[dict],
-) -> None:
-    if state.stage_timings is None:
-        state.stage_timings = {}
-    state.stage_timings[stage] = {
-        "started_at": started,
-        "ended_at": datetime.now(),
-    }
-
-    if state.stage_llm_usage is None:
-        state.stage_llm_usage = {}
-    state.stage_llm_usage[stage] = {
-        "llm_calls": llm_calls,
-        "token_usage": token_usage,
-    }
+    record_stage_metrics(
+        state,
+        stage,
+        started,
+        llm_calls=llm_calls,
+        token_usage=token_usage,
+    )
 
 
 def _with_budget_limitation(answer: Optional[str]) -> str:

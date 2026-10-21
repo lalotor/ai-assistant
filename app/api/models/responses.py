@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from app.contracts.review import ReviewDecision, ReviewOutcome
+
 
 # ---------------------------------------------------------------------------
 # Top-level response models
@@ -14,7 +16,7 @@ class AskResponse(BaseModel):
         default=None,
         description="Source files used during retrieval, if any.",
     )
-    review_decision: str | None = Field(
+    review_decision: ReviewDecision | None = Field(
         default=None,
         description="The reviewer's final decision: approve, revise, or abstain.",
     )
@@ -22,7 +24,7 @@ class AskResponse(BaseModel):
         default=0,
         description="Number of revisions attempted (0 or 1).",
     )
-    review_outcome: str | None = Field(
+    review_outcome: ReviewOutcome | None = Field(
         default=None,
         description=(
             "Final review outcome: approved, revised, abstained, "

@@ -91,6 +91,33 @@ class TestReviewerNode:
         assert result.initial_review_decision == "approve"
         assert result.initial_review_feedback == "looks good"
 
+    def test_final_review_receives_the_original_tool_output_and_sources(self, mocker):
+        mock_llm = make_structured_llm(mocker, decision="approve")
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state(
+            revision_count=1,
+            draft_answer="the revised answer",
+            tool_output="ProcessController calls computeDiff(request.getJobId(), ...)",
+            retrieved_sources=["ProcessController.java", "DiffService.java"],
+        )
+
+        reviewer_node(state)
+
+        prompt = mock_llm.with_structured_output.return_value.invoke.call_args.args[0]
+        assert "Original Worker tool output" in prompt
+        assert "ProcessController calls computeDiff" in prompt
+        assert "ProcessController.java, DiffService.java" in prompt
+
+    def test_initial_review_uses_the_worker_draft_as_evidence(self, mocker):
+        mock_llm = make_structured_llm(mocker, decision="approve")
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state()
+
+        reviewer_node(state)
+
+        prompt = mock_llm.with_structured_output.return_value.invoke.call_args.args[0]
+        assert "draft above is the Worker's raw tool output" in prompt
+
     def test_requests_a_revision_with_actionable_feedback(self, mocker):
         feedback = "Name the three source types explicitly; the evidence lists them."
         mock_llm = make_structured_llm(mocker, decision="revise", feedback=feedback)
@@ -122,6 +149,23 @@ class TestReviewerNode:
         assert result.review_outcome == "revision_skipped"
         assert result.final_answer == "the reviewer's improved answer"
         assert result.revision_count == 0
+
+    def test_single_pass_revise_without_a_new_answer_abstains(self, mocker):
+        mock_llm = make_structured_llm(
+            mocker,
+            decision="revise",
+            final_answer="Tool result:\nsome context",
+            feedback="Add the missing detail.",
+        )
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state(revision_enabled=False)
+
+        result = reviewer_node(state)
+
+        assert result.review_decision == "abstain"
+        assert result.review_outcome == "abstained"
+        assert result.initial_review_decision == "revise"
+        assert result.final_answer == "I couldn't produce a reliable answer to this question."
 
     def test_no_tool_route_never_requests_a_revision(self, mocker):
         mock_llm = make_structured_llm(
@@ -164,7 +208,7 @@ class TestReviewerNode:
             feedback="The answer still omits the source types.",
         )
         mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
-        state = make_state(revision_count=1)
+        state = make_state(revision_count=1, draft_answer="the revised answer")
 
         result = reviewer_node(state)
 
@@ -173,6 +217,44 @@ class TestReviewerNode:
         assert result.final_answer.startswith("the revised answer")
         assert "revised once" in result.final_answer
         assert result.revision_count == 1
+
+    def test_budget_exhaustion_without_a_final_answer_uses_a_safe_limitation(self, mocker):
+        mock_llm = make_structured_llm(
+            mocker,
+            decision="revise",
+            final_answer=None,
+            feedback="The answer still omits the source types.",
+        )
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state(revision_count=1, draft_answer="")
+
+        result = reviewer_node(state)
+
+        assert result.review_outcome == "budget_exhausted"
+        assert result.final_answer.startswith(
+            "The revised answer could not be fully approved."
+        )
+        assert "revised once" in result.final_answer
+
+    def test_budget_exhaustion_does_not_duplicate_an_existing_limitation(self, mocker):
+        limitation = (
+            "the revised answer\n\nNote: this answer was revised once, but the "
+            "reviewer still identified a material deficiency within the "
+            "available evidence. Treat it as provisional."
+        )
+        mock_llm = make_structured_llm(
+            mocker,
+            decision="revise",
+            final_answer=limitation,
+            feedback="Still incomplete.",
+        )
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state(revision_count=1, draft_answer=limitation)
+
+        result = reviewer_node(state)
+
+        assert result.final_answer == limitation
+        assert result.final_answer.count("revised once") == 1
 
     def test_final_review_approval_marks_the_answer_as_revised(self, mocker):
         mock_llm = make_structured_llm(mocker, decision="approve", final_answer="the revised answer")

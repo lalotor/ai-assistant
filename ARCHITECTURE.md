@@ -151,7 +151,7 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
 **Key Functions:**
 - `main()`: Orchestrates the entire workflow (interactive or CLI-driven)
 - `run_question(question, output_json)`: Executes a single question through the graph
-- `parse_args()`: Handles CLI arguments (`--question`/`-q`, `--json`)
+- `parse_args()`: Handles CLI arguments (`--question`/`-q`, `--json`, `--revision`)
 - `save_graph_image()`: Generates Mermaid PNG visualization
 
 **CLI Modes:**
@@ -161,6 +161,7 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
 | Interactive | `python main.py` | User types question at prompt |
 | Single Question | `python main.py -q "question"` | One-shot CLI execution |
 | JSON Output | `python main.py -q "question" --json` | Programmatic/evaluation use |
+| Revision | `python main.py -q "question" --json --revision` | Bounded review/revision experiment |
 
 **JSON Output Format** (used by evaluation runner):
 ```json
@@ -171,9 +172,14 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
   "tool_input": {"query": "..."},
   "tool_output": "...",
   "draft_answer": "...",
+  "initial_draft_answer": "... or null",
   "final_answer": "...",
   "review_feedback": "...",
-  "retrieved_sources": ["data/docs/..."]
+  "review_decision": "approve | revise | abstain",
+  "revision_count": 0,
+  "review_outcome": "approved | revised | abstained | budget_exhausted | revision_skipped",
+  "retrieved_sources": ["data/docs/..."],
+  "execution_trace": {"review_trace": {}, "revision_events": []}
 }
 ```
 
@@ -193,7 +199,7 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
 
 ### 2. **Agent System** (`app/agents/`)
 
-#### **State Management** (`state.py`)
+#### **State Management** (`contracts/agent.py`)
 
 ```python
 class AgentState(BaseModel):
@@ -303,7 +309,8 @@ decision, and produces the reviewed final answer.
 4. On a revision-enabled first pass, a `revise` decision with non-empty
    feedback routes to the revision node.
 5. A second pass (`reviewer_final`) evaluates the revised draft using the same
-   evidence gate but cannot request another revision.
+   evidence gate and receives the original Worker tool output and retrieved
+   sources, but cannot request another revision.
 
 **Output Model:**
 ```python
@@ -319,6 +326,8 @@ directly support the response. If it reports insufficient evidence on either
 pass, the application returns a standard abstention instead of the proposed
 answer. A `revise` decision in single-pass mode uses the Reviewer's inline
 `final_answer` and records `revision_skipped`; it does not add an LLM call.
+If that inline answer is blank or identical to the draft, the Reviewer
+abstains rather than returning the unreviewed draft.
 
 **Stage keys:** the first pass records timing/usage under `reviewer`; the
 post-revision pass uses `reviewer_final`.
@@ -841,15 +850,16 @@ ai-assistant/
 │
 ├── app/                         # Application modules
 │   ├── agents/                  # Multi-agent system
-│   │   ├── graph.py            # LangGraph workflow definition
-│   │   ├── state.py            # Agent state model
 │   │   ├── planner.py          # Planner agent (tool selection)
 │   │   ├── worker.py           # Worker agent (tool execution)
 │   │   ├── reviewer.py         # Reviewer agent (decision + final answer)
 │   │   ├── revision.py         # One evidence-grounded revision
+│   │   ├── stage.py            # Shared stage timing/usage recorder
 │   │   └── graph.py            # Conditional review/revision routing
 │   │
 │   ├── contracts/agent.py      # AgentState, ReviewResult, ToolDecision
+│   ├── contracts/review.py     # Review decision/outcome types
+│   ├── contracts/trace.py      # ExecutionTrace, ReviewTrace, StageEvent
 │   ├── prompts/reviewer.txt    # Review rubric and decision contract
 │   ├── prompts/revision.txt    # Revision instruction
 │   │
@@ -1343,6 +1353,9 @@ Results are saved to `evaluation/results/eval_single_pass_<timestamp>.json` or
 `eval_revision_<timestamp>.json`. The comparison CLI writes
 `evaluation/reports/revision_comparison.{json,md}` with aggregate and
 per-question quality, latency, LLM-call, token, and review-outcome deltas.
+The Week 11 report keeps revision opt-in: the only reliable gain was correcting
+a Doc Retriever evidence failure, and the keyword proxy overstated one revised
+answer. See `docs/reliability.md` for the decision record.
 
 ---
 

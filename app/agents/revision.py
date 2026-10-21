@@ -2,6 +2,7 @@ from datetime import datetime
 
 import structlog
 
+from app.agents.stage import record_stage_metrics
 from app.contracts.agent import AgentState
 from app.prompts import format_prompt
 from app.utils.llm import get_llm, extract_usage
@@ -54,19 +55,13 @@ def revision_node(state: AgentState) -> AgentState:
     state.revision_count += 1
     state.review_decision = None
 
-    if state.stage_timings is None:
-        state.stage_timings = {}
-    state.stage_timings["revision"] = {
-        "started_at": started,
-        "ended_at": datetime.now(),
-    }
-
-    if state.stage_llm_usage is None:
-        state.stage_llm_usage = {}
-    state.stage_llm_usage["revision"] = {
-        "llm_calls": 1,
-        "token_usage": token_usage,
-    }
+    record_stage_metrics(
+        state,
+        "revision",
+        started,
+        llm_calls=1,
+        token_usage=token_usage,
+    )
 
     logger.info(
         "revision_completed",

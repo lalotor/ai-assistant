@@ -129,6 +129,8 @@ class TestCompareResults:
         assert comparison["review"]["revision"] == {
             "revisions_attempted": 4,
             "revision_count_total": 4,
+            "answers_changed": 0,
+            "questions_with_revision": 2,
             "outcomes": {"budget_exhausted": 2, "revised": 2},
         }
 
@@ -177,6 +179,8 @@ class TestComparisonReport:
         assert report.startswith("# Week 11 comparison")
         assert "Answer score:" in report
         assert "improved 1, unchanged 0, degraded 0" in report
+        assert "Latency P50:" in report
+        assert "Review outcomes:" in report
         assert "| q1 |" in report
         assert "revised=1" in report
         assert "Quality signal: 1 improved" in report
@@ -196,6 +200,21 @@ class TestComparisonReport:
         results = load_results_files([str(first), str(tmp_path / "*.json")])
 
         assert [result["question"] for result in results] == ["q1", "q1", "q2"]
+
+    def test_rejects_a_run_file_with_the_wrong_declared_mode(self, tmp_path):
+        path = tmp_path / "revision.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "summary": {"mode": "revision"},
+                    "results": [make_result("q1")],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="Expected a single_pass"):
+            load_results_files([str(path)], expected_mode="single_pass")
 
     def test_writes_json_and_markdown_reports(self, tmp_path):
         comparison = compare_results(

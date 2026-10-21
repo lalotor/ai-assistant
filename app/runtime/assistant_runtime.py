@@ -149,6 +149,7 @@ class AssistantRuntime:
                     failed_stage=e.stage,
                     failure_category=e.failure_category,
                     failure_type=e.failure_type,
+                    review_state=e.review_state,
                 )
                 logger.error(
                     "workflow_execution_failed",

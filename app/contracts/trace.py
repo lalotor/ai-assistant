@@ -2,7 +2,11 @@ from datetime import datetime
 from typing import Any, Literal, Optional
 from dataclasses import asdict, dataclass, field, fields
 
+from app.contracts.review import ReviewDecision, ReviewOutcome
 from app.utils.util import serialize_value
+
+STAGE_NAMES = ("planner", "worker", "reviewer", "revision", "reviewer_final")
+
 
 @dataclass
 class StageEvent:
@@ -87,13 +91,13 @@ class ReviewTrace:
     ``StageEvent`` objects; this value object carries only the decision
     history needed to answer "what happened and why?".
     """
-    initial_decision: Optional[str] = None
+    initial_decision: Optional[ReviewDecision] = None
     initial_feedback: Optional[str] = None
     revision_attempted: bool = False
     revision_count: int = 0
-    final_decision: Optional[str] = None
+    final_decision: Optional[ReviewDecision] = None
     final_feedback: Optional[str] = None
-    outcome: Optional[str] = None
+    outcome: Optional[ReviewOutcome] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "ReviewTrace":

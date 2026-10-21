@@ -373,6 +373,14 @@ class TestFailedTraceNewStages:
             failed_stage=failed_stage,
             failure_category=failure_category,
             failure_type="TimeoutError",
+            review_state={
+                "initial_decision": "revise",
+                "revision_attempted": True,
+                "revision_count": 1 if failed_stage == "reviewer_final" else 0,
+                "final_decision": None,
+                "final_feedback": None,
+                "outcome": None,
+            },
         )
 
         assert trace.outcome == "failed"
@@ -380,7 +388,8 @@ class TestFailedTraceNewStages:
         assert trace.failure_category == failure_category
         assert trace.final_answer == ""
         assert trace.duration_ms == 4000.0
-        assert trace.review_trace is None
+        assert trace.review_trace.initial_decision == "revise"
+        assert trace.review_trace.final_feedback is None
         assert trace.reviewer_events[0].input_snapshot == {}
         assert trace.reviewer_events[0].output_snapshot == {}
 

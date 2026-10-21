@@ -18,8 +18,7 @@ from collections import Counter
 import math
 from typing import Any
 
-
-_STAGES = ("planner", "worker", "reviewer", "reviewer_final", "revision")
+from app.contracts.trace import STAGE_NAMES
 
 
 def _percentile(values: list[float], pct: float) -> float | None:
@@ -41,6 +40,20 @@ def _percentile(values: list[float], pct: float) -> float | None:
 def _avg(values: list[float]) -> float | None:
     """Arithmetic mean, or None for an empty list (see _percentile)."""
     return sum(values) / len(values) if values else None
+
+
+def result_token_totals(result: dict[str, Any]) -> tuple[int, int]:
+    """Return (input_tokens, output_tokens) across a result's stage usage."""
+    usage = result.get("llm_usage") or {}
+    input_tokens = 0
+    output_tokens = 0
+    for stage in STAGE_NAMES:
+        stage_usage = usage.get(stage) or {}
+        token_usage = stage_usage.get("token_usage")
+        if token_usage:
+            input_tokens += token_usage.get("input_tokens", 0)
+            output_tokens += token_usage.get("output_tokens", 0)
+    return input_tokens, output_tokens
 
 
 def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -71,8 +84,8 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
         if r["timing_metrics"]["trace"]["duration_ms"] is not None
     ]
 
-    stage_latencies: dict[str, list[float]] = {stage: [] for stage in _STAGES}
-    stage_llm_calls: dict[str, list[int]] = {stage: [] for stage in _STAGES}
+    stage_latencies: dict[str, list[float]] = {stage: [] for stage in STAGE_NAMES}
+    stage_llm_calls: dict[str, list[int]] = {stage: [] for stage in STAGE_NAMES}
     total_input_tokens = 0
     total_output_tokens = 0
     total_llm_calls = 0
@@ -81,7 +94,7 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
         timing = r["timing_metrics"]
         usage = r["llm_usage"]
 
-        for stage in _STAGES:
+        for stage in STAGE_NAMES:
             stage_timing = timing.get(stage)
             if stage_timing is not None:
                 duration = stage_timing.get("duration_ms")
@@ -91,11 +104,10 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
             stage_usage = usage.get(stage)
             if stage_usage is not None:
                 stage_llm_calls[stage].append(stage_usage.get("llm_calls", 0))
-                token_usage = stage_usage.get("token_usage")
-                if token_usage:
-                    total_input_tokens += token_usage.get("input_tokens", 0)
-                    total_output_tokens += token_usage.get("output_tokens", 0)
 
+        input_tokens, output_tokens = result_token_totals(r)
+        total_input_tokens += input_tokens
+        total_output_tokens += output_tokens
         total_llm_calls += usage.get("total_llm_calls", 0)
 
     scores = [r["score"] for r in timed_results if r.get("score") is not None]
@@ -164,6 +176,9 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
             "revision_count_total": sum(
                 r.get("revision_count", 0) for r in timed_results
             ),
+            "answers_changed": sum(
+                1 for r in timed_results if r.get("answer_changed")
+            ),
             "outcomes": dict(sorted(review_outcomes.items())),
         },
     }
@@ -230,6 +245,7 @@ def format_baseline_report_markdown(report: dict[str, Any], title: str = "Evalua
         f"Avg tokens/Q:         {fmt(report['tokens']['avg_tokens_per_question'])}",
         "",
         f"Revisions attempted:  {review.get('revisions_attempted', 0)}",
+        f"Answers changed:      {review.get('answers_changed', 0)}",
         f"Review outcomes:      {', '.join(f'{k}={v}' for k, v in review.get('outcomes', {}).items()) or 'n/a'}",
     ])
     return "\n".join(lines)

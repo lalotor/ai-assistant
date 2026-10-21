@@ -1,17 +1,8 @@
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
+from app.contracts.review import ReviewDecision, ReviewOutcome
 from app.contracts.trace import RetrievalTrace
-
-
-ReviewDecision = Literal["approve", "revise", "abstain"]
-ReviewOutcome = Literal[
-    "approved",
-    "revised",
-    "abstained",
-    "budget_exhausted",
-    "revision_skipped",
-]
 
 
 class AgentState(BaseModel):

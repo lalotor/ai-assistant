@@ -39,7 +39,7 @@ Final Answer.
 | Revision | Provider error, invalid output, empty revision, or timeout after the reviewer requested changes | Apply the LLM retry policy, then fail. Do not restart the graph, retry the tool, or return the pre-revision draft as if it were approved. | Fail explicitly; no revised answer is returned. | Record the `revision` stage failure and available timings. |
 | Reviewer (final pass after revision) | Provider error, invalid output, missing/invalid decision, or timeout | Apply the LLM retry policy, then fail. The revised draft is not reviewer-approved and must not be presented as approved. | Fail explicitly; do not silently return the revised draft. | Record the `reviewer_final` stage failure; the trace outcome is `failed`. |
 | Reviewer / graph | Revision budget already used and the final Reviewer still requests revision | Do not route to another revision. End the graph, keep the revised answer, append an explicit provisional-answer limitation, and mark the outcome `budget_exhausted`. | Return the revised answer with its limitation; trace outcome is `degraded`. | Record both review decisions, one revision, and the exhausted budget. |
-| Reviewer / graph | Revision is disabled and the Reviewer requests revision | Do not call the revision step. Use the Reviewer's inline `final_answer` and mark `review_outcome=revision_skipped`. | Return the single-pass reviewed answer; trace outcome remains `success`. | Record the reviewer decision and that no revision was attempted. |
+| Reviewer / graph | Revision is disabled and the Reviewer requests revision | Do not call the revision step. Use the Reviewer's inline `final_answer` and mark `review_outcome=revision_skipped` only when that answer differs from the draft. If the Reviewer returns the unchanged/blank draft, abstain instead of presenting an unreviewed draft as the answer. | Return the single-pass reviewed answer; trace outcome remains `success`. | Record the reviewer decision and that no revision was attempted. |
 
 ## Review and revision policy
 
@@ -47,15 +47,18 @@ Final Answer.
   `abstain`. A `revise` decision is actionable only when `feedback` is
   non-empty; otherwise the graph does not start a revision.
 - Revision is opt-in and bounded to one attempt. The graph checks
-  `revision_enabled`, the decision, the feedback, and `revision_count < 1`
-  before routing to the `revision` node. The final Reviewer pass cannot
-  request another revision, even if its prompt output says `revise`.
+  `revision_enabled`, `selected_tool` (never `none`/missing), the decision, the
+  feedback, and `revision_count < 1` before routing to the `revision` node.
+  The final Reviewer pass cannot request another revision, even if its prompt
+  output says `revise`.
 - A revision receives the original question, current draft, reviewer
   feedback, the existing tool output, and the existing retrieved-source
   list. It does not re-run the selected tool or re-retrieve documents.
   `retrieved_sources` and `retrieval_trace` are retained unchanged.
 - The final Reviewer reuses the same structured contract and evidence gate
-  as the initial Reviewer. For Doc Retriever answers, a final
+  as the initial Reviewer. It receives the original Worker tool output and
+  retrieved-source list in addition to the revised prose, so revision cannot
+  hide evidence from the review pass. For Doc Retriever answers, a final
   `evidence_sufficient=false` produces a deterministic abstention; it never
   authorizes inventing evidence during revision.
 - If the final Reviewer still requests changes after one revision, the graph
@@ -63,8 +66,11 @@ Final Answer.
   `review_outcome=budget_exhausted`. This is a degraded result, not a second
   revision and not a normal approval.
 - If revision is disabled and the Reviewer requests changes, the single-pass
-  behavior is preserved: the Reviewer's inline `final_answer` is returned
-  and `review_outcome=revision_skipped`. No extra LLM call is made.
+  behavior is preserved when the Reviewer supplies a reviewed inline
+  `final_answer`: return it with `review_outcome=revision_skipped`. No extra
+  LLM call is made. If the Reviewer supplies no new answer (blank or identical
+  to the draft), return a deterministic abstention rather than the unreviewed
+  draft.
 
 ## Retry and timeout bounds
 
@@ -131,7 +137,9 @@ does not expose a stable retry-attempt callback to the runtime, so a
 
 Revision-enabled traces contain two Reviewer events (`reviewer` and
 `reviewer_final`), one Revision event, and a Review Trace with the initial and
-final decisions, feedback, revision count, and outcome. Single-pass traces
+final decisions, feedback, revision count, and outcome. A failed trace may
+retain the initial decision and revision count as content-free metadata, but
+never feedback text, prompts, or document excerpts. Single-pass traces
 contain one Reviewer event and no Revision event. The response exposes the
 final `review_decision`, `revision_count`, and `review_outcome`; source
 provenance remains the same list returned by the Worker.
@@ -187,6 +195,47 @@ but not included in the three-run aggregate. Manual user verification on
 DiffService abstention remains a documented model-judgment limitation, not a
 claim of deterministic resolution or a blocker to closing the Week 10 scope.
 
+### Week 11 controlled revision (2026-10-20)
+
+Three full runs per mode were completed on the 11-question dataset with the
+corrected Reviewer prompt (66 evaluations total). The aggregate and
+per-question audit are in
+[revision_comparison.md](../evaluation/reports/revision_comparison.md) and
+[revision_comparison.json](../evaluation/reports/revision_comparison.json).
+An earlier comparison exposed that the post-revision Reviewer received only
+revised prose and no raw tool output, causing abstentions; the final runs
+below pass the original tool output and retrieved sources into the final
+review.
+
+| Metric | Single-pass (33 evals) | Revision (33 evals) |
+|---|---:|---:|
+| Average answer score | 0.7258 | 0.8636 |
+| Average retrieval/source score | 0.5253 | 0.5586 |
+| Average latency | 8,421.3 ms | 9,000.4 ms |
+| P50 latency | 4,311.0 ms | 4,397.6 ms |
+| P95 latency | 24,382.6 ms | 22,604.5 ms |
+| Average tokens per question | 4,490 | 4,886 |
+| Total LLM calls | 99 | 107 |
+
+Only four revisions were attempted, all on two Doc Retriever questions
+(ingestion source types and DiffService inputs); no live run exhausted the
+budget or failed revision. The DiffService answer improved genuinely: the
+baseline averaged 0.33 with two abstentions, while all three revision-enabled
+runs returned the four call-site arguments (average 1.00). The ingestion
+question averaged 0.00 -> 0.67, but every non-abstaining run still named only
+the three concrete subclasses and never the `FileSource` base class; the keyword
+scorer's substring match inflates that result. The nine no-revision questions
+contribute only sampling variance. The two revision-triggered questions
+account for roughly +0.12 of the +0.14 aggregate answer-score delta; if the
+ingestion result is discounted, the defensible gain is about +0.06.
+
+**Decision: keep revision opt-in (`revision_enabled=False`) and do not enable
+it by default.** The measured benefit is confined to one Doc Retriever failure
+mode, the live trigger rate is low and uneven, and the keyword proxy
+overstates at least one revised answer. The flag remains available for
+targeted experiments; revisit the default with a larger semantic-quality
+evaluation and enough revision-triggered cases for within-question comparison.
+
 ## Accepted observability limitation
 
 - Keep provider-client retries bounded and enabled. The installed
@@ -198,6 +247,7 @@ claim of deterministic resolution or a blocker to closing the Week 10 scope.
   evidence. The current sufficiency signal is LLM-judged; no deterministic
   semantic proof exists for source relevance.
 - Revision quality is not guaranteed by the existence of a revision step. The
-  Week 11 comparison must be read as keyword-proxy evidence, with manual
-  inspection of changed, unchanged, and regressed answers; revision must not
-  be enabled by default unless that comparison supports it.
+  Week 11 comparison is keyword-proxy evidence plus a manual audit, and its
+  benefit was limited to one Doc Retriever question. Revision therefore
+  remains opt-in and must not be enabled by default until a larger
+  within-question evaluation supports that change.

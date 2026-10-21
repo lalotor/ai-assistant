@@ -292,9 +292,10 @@ Introduce:
   re-retrieve or discard provenance.
 - `reviewer` / `revision` / `reviewer_final` stage timings and usage, plus a
   Review Trace, are included in the execution trace.
-- Default-off comparison is documented in
-  [evaluation/reports/revision_comparison.md](evaluation/reports/revision_comparison.md)
-  once the live comparison runs are complete.
+- The single-pass vs revision comparison is in
+  [evaluation/reports/revision_comparison.md](evaluation/reports/revision_comparison.md).
+  Revision remains opt-in: the measured benefit was limited to one Doc
+  Retriever failure mode, and the keyword proxy overstated one revised answer.
 
 ## Week 12 — Final Integration + Production Readiness
 

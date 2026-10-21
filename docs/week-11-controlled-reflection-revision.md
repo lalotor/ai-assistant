@@ -238,6 +238,15 @@ At the end of the experiment, choose one of these outcomes:
 
 A negative or inconclusive result is a valid engineering outcome.
 
+**Week 11 outcome (2026-10-20): Keep optional.** Across three full runs per
+mode, the answer-score proxy rose from 0.73 to 0.86, but only four revisions
+were attempted on two Doc Retriever questions. Manual inspection found one
+genuine improvement (DiffService inputs) and one unreliable result (ingestion
+source types, where substring matching inflated the score despite a missing
+base class). The benefit is therefore question-specific and the evidence is
+not strong enough to enable revision by default. See
+`evaluation/reports/revision_comparison.md` and `docs/reliability.md`.
+
 ## 9. Definition of done
 
 - [ ] Existing reviewer and graph behavior inspected before changes.
