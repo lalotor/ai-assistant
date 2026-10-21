@@ -249,18 +249,18 @@ not strong enough to enable revision by default. See
 
 ## 9. Definition of done
 
-- [ ] Existing reviewer and graph behavior inspected before changes.
-- [ ] Answer-quality criteria are documented.
-- [ ] Reviewer returns validated structured decisions.
-- [ ] Conditional routing supports approval, revision, and abstention.
-- [ ] Revision budget is enforced in graph logic, with at most one attempt.
-- [ ] Revision feedback is actionable and includes relevant evidence/context.
-- [ ] Source provenance is preserved through revision.
-- [ ] Week 10 reliability policies cover reviewer and revision failures.
-- [ ] Traces show review decisions, revision attempts, and final outcome.
-- [ ] Automated tests cover the normal path, revision, abstention, budget exhaustion, malformed output, and failures.
-- [ ] Single-pass and revision-enabled evaluations are compared on the same dataset.
-- [ ] A recommendation is documented based on quality, latency, and token usage.
+- [x] Existing reviewer and graph behavior inspected before changes.
+- [x] Answer-quality criteria are documented.
+- [x] Reviewer returns validated structured decisions.
+- [x] Conditional routing supports approval, revision, and abstention.
+- [x] Revision budget is enforced in graph logic, with at most one attempt.
+- [x] Revision feedback is actionable and includes relevant evidence/context.
+- [x] Source provenance is preserved through revision.
+- [x] Week 10 reliability policies cover reviewer and revision failures.
+- [x] Traces show review decisions, revision attempts, and final outcome.
+- [x] Automated tests cover the normal path, revision, abstention, budget exhaustion, malformed output, and failures.
+- [x] Single-pass and revision-enabled evaluations are compared on the same dataset.
+- [x] A recommendation is documented based on quality, latency, and token usage.
 
 ## 10. Targeted references
 
