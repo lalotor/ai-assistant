@@ -25,6 +25,14 @@ def make_result(
     planner_tokens=(100, 20),
     worker_tokens=(500, 80),
     reviewer_tokens=(150, 40),
+    reviewer_final_ms=None,
+    revision_ms=None,
+    reviewer_final_calls=None,
+    revision_calls=None,
+    reviewer_final_tokens=None,
+    revision_tokens=None,
+    revision_count=0,
+    review_outcome=None,
     retrieval_trace=None,
 ) -> dict:
     """A complete, fully-timed evaluation result dict, matching the shape
@@ -44,22 +52,41 @@ def make_result(
             "token_usage": {"input_tokens": input_tokens, "output_tokens": output_tokens, "model": "gpt-5.4-mini"},
         }
 
+    timing_metrics = {
+        "trace": {"duration_ms": trace_duration_ms},
+        "planner": {"duration_ms": planner_ms},
+        "worker": {"duration_ms": worker_ms},
+        "reviewer": {"duration_ms": reviewer_ms},
+    }
+    llm_usage = {
+        "planner": usage(planner_calls, planner_tokens),
+        "worker": usage(worker_calls, worker_tokens),
+        "reviewer": usage(reviewer_calls, reviewer_tokens),
+    }
+    total_calls = planner_calls + worker_calls + reviewer_calls
+
+    if reviewer_final_ms is not None or reviewer_final_calls is not None:
+        timing_metrics["reviewer_final"] = {"duration_ms": reviewer_final_ms}
+    if reviewer_final_calls is not None:
+        llm_usage["reviewer_final"] = usage(reviewer_final_calls, reviewer_final_tokens)
+        total_calls += reviewer_final_calls
+
+    if revision_ms is not None or revision_calls is not None:
+        timing_metrics["revision"] = {"duration_ms": revision_ms}
+    if revision_calls is not None:
+        llm_usage["revision"] = usage(revision_calls, revision_tokens)
+        total_calls += revision_calls
+
+    llm_usage["total_llm_calls"] = total_calls
+
     return {
         "score": score,
         "score_sources": score_sources,
         "status": "pass" if score >= 0.5 else "fail",
-        "timing_metrics": {
-            "trace": {"duration_ms": trace_duration_ms},
-            "planner": {"duration_ms": planner_ms},
-            "worker": {"duration_ms": worker_ms},
-            "reviewer": {"duration_ms": reviewer_ms},
-        },
-        "llm_usage": {
-            "planner": usage(planner_calls, planner_tokens),
-            "worker": usage(worker_calls, worker_tokens),
-            "reviewer": usage(reviewer_calls, reviewer_tokens),
-            "total_llm_calls": planner_calls + worker_calls + reviewer_calls,
-        },
+        "revision_count": revision_count,
+        "review_outcome": review_outcome,
+        "timing_metrics": timing_metrics,
+        "llm_usage": llm_usage,
         "retrieval_trace": retrieval_trace,
     }
 
@@ -200,6 +227,77 @@ class TestBuildBaselineReport:
         assert report["evaluated"] == 0
         assert report["latency_ms"]["avg"] is None
         assert report["tokens"]["total_tokens"] == 0
+
+
+@pytest.mark.unit
+class TestRevisionAggregation:
+    def test_computes_revision_and_final_reviewer_stage_latencies(self):
+        results = [
+            make_result(reviewer_final_ms=300.0, revision_ms=500.0),
+            make_result(reviewer_final_ms=500.0, revision_ms=700.0),
+        ]
+
+        report = build_baseline_report(results)
+
+        assert report["stage_latency_ms_avg"]["reviewer_final"] == 400.0
+        assert report["stage_latency_ms_avg"]["revision"] == 600.0
+
+    def test_counts_revision_and_final_review_llm_calls_and_tokens(self):
+        results = [
+            make_result(
+                revision_calls=1,
+                revision_tokens=(200, 50),
+                reviewer_final_calls=1,
+                reviewer_final_tokens=(250, 30),
+            )
+        ]
+
+        report = build_baseline_report(results)
+
+        assert report["llm_calls"]["total"] == 5
+        assert report["llm_calls"]["stage_avg"]["revision"] == 1.0
+        assert report["llm_calls"]["stage_avg"]["reviewer_final"] == 1.0
+        assert report["tokens"]["total_input_tokens"] == 1200
+        assert report["tokens"]["total_output_tokens"] == 220
+        assert report["tokens"]["total_tokens"] == 1420
+
+    def test_summarizes_review_outcomes_and_revision_attempts(self):
+        results = [
+            make_result(review_outcome="revised", revision_count=1),
+            make_result(review_outcome="approved", revision_count=0),
+            make_result(review_outcome="budget_exhausted", revision_count=1),
+        ]
+
+        report = build_baseline_report(results)
+
+        assert report["review"] == {
+            "revisions_attempted": 2,
+            "revision_count_total": 2,
+            "outcomes": {
+                "approved": 1,
+                "budget_exhausted": 1,
+                "revised": 1,
+            },
+        }
+
+    def test_format_includes_revision_and_review_lines_when_present(self):
+        report = build_baseline_report([
+            make_result(
+                reviewer_final_ms=300.0,
+                revision_ms=500.0,
+                reviewer_final_calls=1,
+                revision_calls=1,
+                review_outcome="revised",
+                revision_count=1,
+            )
+        ])
+
+        text = format_baseline_report_markdown(report, title="Revision run")
+
+        assert "Final reviewer avg:" in text
+        assert "Revision avg:" in text
+        assert "Revisions attempted:  1" in text
+        assert "revised=1" in text
 
 
 @pytest.mark.unit

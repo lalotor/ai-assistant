@@ -11,6 +11,7 @@ all initialisation is centralised). This requires a valid .env to be
 present, matching how the module is used in practice (via
 `python -m evaluation.runner`).
 """
+import json
 import subprocess
 
 import pytest
@@ -149,3 +150,22 @@ class TestAskAssistant:
 
         assert secret not in repr(logs)
         assert secret not in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        ("revision_enabled", "expect_flag"),
+        [(False, False), (True, True)],
+    )
+    def test_adds_the_revision_flag_only_when_enabled(
+        self, mocker, revision_enabled, expect_flag
+    ):
+        completed = mocker.Mock(
+            returncode=0,
+            stdout=json.dumps(make_response().to_dict()),
+            stderr="",
+        )
+        run = mocker.patch("evaluation.runner.subprocess.run", return_value=completed)
+
+        ask_assistant("q", timeout=1, revision_enabled=revision_enabled)
+
+        command = run.call_args.args[0]
+        assert ("--revision" in command) is expect_flag

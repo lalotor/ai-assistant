@@ -65,7 +65,12 @@ class AssistantRuntime:
         self._is_initialized = True
         return True
 
-    def run_question(self, question: str, trace_id: str = None) -> QueryResponse:
+    def run_question(
+        self,
+        question: str,
+        trace_id: str = None,
+        revision_enabled: bool = False,
+    ) -> QueryResponse:
         """Run a single question through the AI assistant graph.
 
         If the setup method has not been called, it will use the default setup.
@@ -76,6 +81,9 @@ class AssistantRuntime:
             question: The user question to process.
             trace_id: The ID for tracing this execution. If not provided,
                 a new trace ID will be generated.
+            revision_enabled: Whether to allow the one bounded revision step
+                when the reviewer requests it. Off by default so normal
+                requests keep the single-pass cost and latency.
 
         Returns:
             The final graph state as a QueryResponse object.
@@ -93,11 +101,16 @@ class AssistantRuntime:
         # Bind correlation ID for structured logging on this question
         structlog.contextvars.bind_contextvars(correlation_id=trace_id)
 
-        initial_state = AgentState(user_input=question, trace_id=trace_id)
+        initial_state = AgentState(
+            user_input=question,
+            trace_id=trace_id,
+            revision_enabled=revision_enabled,
+        )
 
         logger.info(
             "initial_state_created",
-            content_length=len(initial_state.user_input)
+            content_length=len(initial_state.user_input),
+            revision_enabled=revision_enabled,
         )
 
         # Use trace_id as the LangGraph thread_id so every request runs in its
@@ -117,6 +130,9 @@ class AssistantRuntime:
                 selected_tool=final_result.get("selected_tool"),
                 final_answer_length=len(final_result.get("final_answer", "")),
                 retrieved_source_count=len(final_result.get("retrieved_sources") or []),
+                review_decision=final_result.get("review_decision"),
+                revision_count=final_result.get("revision_count", 0),
+                review_outcome=final_result.get("review_outcome"),
             )
             logger.debug("question_answered_successfully")
 
@@ -174,5 +190,9 @@ class AssistantRuntime:
             final_answer=final_result["final_answer"],
             review_feedback=final_result["review_feedback"],
             retrieved_sources=final_result.get("retrieved_sources"),
+            initial_draft_answer=final_result.get("initial_draft_answer"),
+            review_decision=final_result.get("review_decision"),
+            revision_count=final_result.get("revision_count", 0),
+            review_outcome=final_result.get("review_outcome"),
             execution_trace=trace
         )

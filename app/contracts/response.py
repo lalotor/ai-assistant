@@ -16,6 +16,10 @@ class QueryResponse:
     final_answer: str
     review_feedback: str
     retrieved_sources: Optional[list[str]] = None
+    initial_draft_answer: Optional[str] = None
+    review_decision: Optional[str] = None
+    revision_count: int = 0
+    review_outcome: Optional[str] = None
     execution_trace: Optional[ExecutionTrace] = None
 
     def to_dict(self) -> dict:

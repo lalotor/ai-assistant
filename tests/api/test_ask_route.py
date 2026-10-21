@@ -73,7 +73,32 @@ class TestAskRoute:
 
         client.post("/ask", json={"question": "hello", "trace_id": "caller-supplied"})
 
-        mock_runtime.run_question.assert_called_once_with("hello", "caller-supplied")
+        mock_runtime.run_question.assert_called_once_with(
+            "hello", "caller-supplied", revision_enabled=False
+        )
+
+    def test_passes_revision_enabled_and_returns_review_outcome(self, mocker):
+        mock_runtime = mocker.Mock()
+        mock_runtime.run_question.return_value = make_query_response(
+            review_decision="approve",
+            revision_count=1,
+            review_outcome="revised",
+        )
+        client = TestClient(make_app(mock_runtime))
+
+        response = client.post(
+            "/ask",
+            json={"question": "hello", "revision_enabled": True},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["review_decision"] == "approve"
+        assert body["revision_count"] == 1
+        assert body["review_outcome"] == "revised"
+        mock_runtime.run_question.assert_called_once_with(
+            "hello", None, revision_enabled=True
+        )
 
     def test_rejects_an_empty_question_with_a_422(self, mocker):
         mock_runtime = mocker.Mock()

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, Literal, Optional
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 
 from app.utils.util import serialize_value
 
@@ -80,6 +80,30 @@ class RetrievalTrace:
         return cls(**filtered_data)
 
 @dataclass
+class ReviewTrace:
+    """Structured summary of the reviewer's decisions across one execution.
+
+    The per-pass timings and LLM usage live on the corresponding
+    ``StageEvent`` objects; this value object carries only the decision
+    history needed to answer "what happened and why?".
+    """
+    initial_decision: Optional[str] = None
+    initial_feedback: Optional[str] = None
+    revision_attempted: bool = False
+    revision_count: int = 0
+    final_decision: Optional[str] = None
+    final_feedback: Optional[str] = None
+    outcome: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ReviewTrace":
+        """Create a ReviewTrace instance from a dictionary, ignoring extra fields."""
+        valid_fields = {f.name for f in fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered_data)
+
+
+@dataclass
 class ExecutionTrace:
     """Complete trace of a single question→answer execution."""
     trace_id: str
@@ -94,6 +118,8 @@ class ExecutionTrace:
     retrieval_trace: Optional[RetrievalTrace]
 
     final_answer: str
+    revision_events: list[StageEvent] = field(default_factory=list)
+    review_trace: Optional[ReviewTrace] = None
     outcome: Literal["success", "recovered", "degraded", "failed"] = "success"
     failed_stage: Optional[str] = None
     failure_category: Optional[str] = None
@@ -118,5 +144,9 @@ class ExecutionTrace:
             filtered_data['worker_events'] = [StageEvent.from_dict(e) for e in filtered_data['worker_events']]
         if 'reviewer_events' in filtered_data:
             filtered_data['reviewer_events'] = [StageEvent.from_dict(e) for e in filtered_data['reviewer_events']]
+        if 'revision_events' in filtered_data:
+            filtered_data['revision_events'] = [StageEvent.from_dict(e) for e in filtered_data['revision_events']]
+        if filtered_data.get('review_trace'):
+            filtered_data['review_trace'] = ReviewTrace.from_dict(filtered_data['review_trace'])
 
         return cls(**filtered_data)

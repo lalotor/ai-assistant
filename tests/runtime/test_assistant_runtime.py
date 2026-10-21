@@ -145,6 +145,49 @@ class TestAssistantRuntimeRunQuestion:
         assert response.retrieved_sources == ["a.md"]
         assert response.execution_trace.trace_id == "t-1"
 
+    def test_passes_revision_enabled_to_the_initial_state(self, mocker):
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.return_value = self._final_result()
+        mocker.patch("app.runtime.assistant_runtime.build_execution_trace", return_value=mocker.Mock(trace_id="t-1"))
+
+        runtime.run_question("hello", trace_id="t-1", revision_enabled=True)
+
+        invoked_state: AgentState = runtime.graph.invoke.call_args[0][0]
+        assert invoked_state.revision_enabled is True
+
+    def test_revision_is_disabled_by_default(self, mocker):
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.return_value = self._final_result()
+        mocker.patch("app.runtime.assistant_runtime.build_execution_trace", return_value=mocker.Mock(trace_id="t-1"))
+
+        runtime.run_question("hello", trace_id="t-1")
+
+        invoked_state: AgentState = runtime.graph.invoke.call_args[0][0]
+        assert invoked_state.revision_enabled is False
+
+    def test_returns_review_and_revision_fields_from_the_final_state(self, mocker):
+        runtime = AssistantRuntime()
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.return_value = self._final_result(
+            review_decision="approve",
+            revision_count=1,
+            review_outcome="revised",
+            initial_draft_answer="Tool result:\ninitial",
+        )
+        mocker.patch("app.runtime.assistant_runtime.build_execution_trace", return_value=mocker.Mock(trace_id="t-1"))
+
+        response = runtime.run_question("hello", trace_id="t-1", revision_enabled=True)
+
+        assert response.review_decision == "approve"
+        assert response.revision_count == 1
+        assert response.review_outcome == "revised"
+        assert response.initial_draft_answer == "Tool result:\ninitial"
+
     def test_reraises_graph_invocation_errors(self, mocker):
         runtime = AssistantRuntime()
         runtime._is_initialized = True

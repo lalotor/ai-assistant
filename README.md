@@ -36,13 +36,27 @@ python main.py --question "Considering only your internal documentation, how man
 python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?"  --json
 ```
 
+## Non-interactive mode with bounded revision
+```bash
+python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?" --json --revision
+```
+
+Revision is opt-in. The graph allows at most one revision when the Reviewer
+returns `revise` with actionable feedback, then performs one final review. The
+API exposes the same switch with `"revision_enabled": true` on `POST /ask`.
+
 ## Run the evaluation suite
 ```bash
-python -m evaluation.runner
+# Single-pass mode
+python -m evaluation.runner --dataset evaluation/datasets/retrieval_eval_full.json
 
-uv run python -c "
-from evaluation.runner import run_evaluation
-run_evaluation('evaluation/datasets/retrieval_eval_full.json')"
+# Revision-enabled mode (same dataset/model/scoring)
+python -m evaluation.runner --dataset evaluation/datasets/retrieval_eval_full.json --revision
+
+# Compare repeated runs per mode
+python -m evaluation.compare \
+  --baseline "evaluation/results/eval_single_pass_*.json" \
+  --revision "evaluation/results/eval_revision_*.json"
 ```
 
 ## Run evaluation report
@@ -270,6 +284,17 @@ Introduce:
 - evidence-grounded refinement
 - controlled iterative orchestration
 - measurable quality improvements
+
+**Implementation:**
+- `ReviewResult.decision` is a validated `approve` / `revise` / `abstain`.
+- The graph routes to at most one dedicated revision node, then a final review.
+- Revision reuses existing tool output and retrieved sources; it does not
+  re-retrieve or discard provenance.
+- `reviewer` / `revision` / `reviewer_final` stage timings and usage, plus a
+  Review Trace, are included in the execution trace.
+- Default-off comparison is documented in
+  [evaluation/reports/revision_comparison.md](evaluation/reports/revision_comparison.md)
+  once the live comparison runs are complete.
 
 ## Week 12 — Final Integration + Production Readiness
 

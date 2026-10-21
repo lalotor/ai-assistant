@@ -10,7 +10,7 @@ from datetime import datetime
 import pytest
 
 from app.contracts.trace import RetrievalTrace
-from app.tracing import build_execution_trace
+from app.tracing import build_execution_trace, build_failed_execution_trace
 
 
 def make_full_state(**overrides) -> dict:
@@ -108,6 +108,7 @@ class TestBuildExecutionTrace:
         assert reviewer_event.output_snapshot == {
             "final_answer": "X is ...",
             "review_feedback": "looks good",
+            "review_decision": None,
         }
 
     def test_computes_stage_durations_in_milliseconds(self):
@@ -220,3 +221,174 @@ class TestBuildExecutionTraceLlmUsage:
         assert trace.planner_events[0].llm_calls == 1
         assert trace.worker_events[0].llm_calls == 0
         assert trace.worker_events[0].token_usage is None
+
+
+def make_revision_state(**overrides) -> dict:
+    """A complete state for one approved revision: initial review, revision,
+    and final review."""
+    t0 = datetime(2026, 1, 1, 12, 0, 0)
+    t1 = datetime(2026, 1, 1, 12, 0, 1)
+    t2 = datetime(2026, 1, 1, 12, 0, 2)
+    t3 = datetime(2026, 1, 1, 12, 0, 3)
+    t4 = datetime(2026, 1, 1, 12, 0, 4)
+    t5 = datetime(2026, 1, 1, 12, 0, 5)
+
+    state = make_full_state(
+        initial_draft_answer="Tool result:\ninitial draft",
+        draft_answer="Tool result:\nrevised draft",
+        final_answer="revised final answer",
+        initial_review_decision="revise",
+        initial_review_feedback="Add the missing detail.",
+        review_decision="approve",
+        review_feedback="The revised answer is grounded.",
+        revision_feedback="Add the missing detail.",
+        revision_count=1,
+        review_outcome="revised",
+        stage_timings={
+            "planner": {"started_at": t0, "ended_at": t1},
+            "worker": {"started_at": t1, "ended_at": t2},
+            "reviewer": {"started_at": t2, "ended_at": t3},
+            "revision": {"started_at": t3, "ended_at": t4},
+            "reviewer_final": {"started_at": t4, "ended_at": t5},
+        },
+        stage_llm_usage={
+            "planner": {"llm_calls": 1, "token_usage": None},
+            "worker": {"llm_calls": 1, "token_usage": None},
+            "reviewer": {"llm_calls": 1, "token_usage": None},
+            "revision": {"llm_calls": 1, "token_usage": None},
+            "reviewer_final": {"llm_calls": 1, "token_usage": None},
+        },
+    )
+    state.update(overrides)
+    return state
+
+
+@pytest.mark.unit
+class TestRevisionTrace:
+    def test_records_both_reviewer_passes_and_the_revision_event(self):
+        trace = build_execution_trace(make_revision_state())
+
+        assert [event.stage for event in trace.reviewer_events] == [
+            "reviewer",
+            "reviewer_final",
+        ]
+        assert len(trace.revision_events) == 1
+        assert trace.revision_events[0].stage == "revision"
+        assert trace.revision_events[0].output_snapshot == {
+            "draft_answer": "Tool result:\nrevised draft",
+        }
+        assert trace.review_trace.initial_decision == "revise"
+        assert trace.review_trace.final_decision == "approve"
+        assert trace.review_trace.revision_attempted is True
+        assert trace.review_trace.revision_count == 1
+        assert trace.review_trace.outcome == "revised"
+        assert trace.outcome == "success"
+        assert trace.duration_ms == 5000.0
+
+    def test_initial_review_uses_the_initial_draft_and_final_review_uses_the_revision(self):
+        trace = build_execution_trace(make_revision_state())
+
+        assert trace.reviewer_events[0].input_snapshot["draft_answer"] == (
+            "Tool result:\ninitial draft"
+        )
+        assert trace.reviewer_events[0].output_snapshot == {
+            "final_answer": None,
+            "review_feedback": "Add the missing detail.",
+            "review_decision": "revise",
+        }
+        assert trace.reviewer_events[1].input_snapshot["draft_answer"] == (
+            "Tool result:\nrevised draft"
+        )
+        assert trace.reviewer_events[1].output_snapshot == {
+            "final_answer": "revised final answer",
+            "review_feedback": "The revised answer is grounded.",
+            "review_decision": "approve",
+        }
+
+    def test_revision_and_final_review_carry_their_own_llm_usage(self):
+        trace = build_execution_trace(make_revision_state())
+
+        assert trace.reviewer_events[0].llm_calls == 1
+        assert trace.revision_events[0].llm_calls == 1
+        assert trace.reviewer_events[1].llm_calls == 1
+
+    @pytest.mark.parametrize("outcome", ["abstained", "budget_exhausted"])
+    def test_marks_abstention_and_budget_exhaustion_as_degraded(self, outcome):
+        trace = build_execution_trace(
+            make_full_state(review_outcome=outcome, review_decision="abstain")
+        )
+
+        assert trace.outcome == "degraded"
+
+    def test_revision_skipped_in_single_pass_mode_remains_successful(self):
+        trace = build_execution_trace(
+            make_full_state(
+                review_outcome="revision_skipped",
+                review_decision="revise",
+            )
+        )
+
+        assert trace.outcome == "success"
+
+    def test_review_trace_and_revision_events_survive_from_dict(self):
+        from app.contracts.trace import ExecutionTrace
+
+        trace = build_execution_trace(make_revision_state())
+        restored = ExecutionTrace.from_dict(trace.to_dict())
+
+        assert len(restored.revision_events) == 1
+        assert restored.review_trace.initial_decision == "revise"
+        assert restored.review_trace.final_decision == "approve"
+
+
+@pytest.mark.unit
+class TestFailedTraceNewStages:
+    @pytest.mark.parametrize(
+        "failed_stage,failure_category",
+        [
+            ("revision", "operation_timeout"),
+            ("reviewer_final", "reviewer_failure"),
+        ],
+    )
+    def test_builds_content_free_events_for_revision_and_final_review_failures(
+        self,
+        failed_stage,
+        failure_category,
+    ):
+        t0 = datetime(2026, 1, 1, 12, 0, 0)
+        t1 = datetime(2026, 1, 1, 12, 0, 1)
+        t2 = datetime(2026, 1, 1, 12, 0, 2)
+        t3 = datetime(2026, 1, 1, 12, 0, 3)
+        t4 = datetime(2026, 1, 1, 12, 0, 4)
+        stage_timings = {
+            "planner": {"started_at": t0, "ended_at": t1},
+            "worker": {"started_at": t1, "ended_at": t2},
+            "reviewer": {"started_at": t2, "ended_at": t3},
+            failed_stage: {"started_at": t3, "ended_at": t4},
+        }
+
+        trace = build_failed_execution_trace(
+            trace_id="failed-trace",
+            stage_timings=stage_timings,
+            failed_stage=failed_stage,
+            failure_category=failure_category,
+            failure_type="TimeoutError",
+        )
+
+        assert trace.outcome == "failed"
+        assert trace.failed_stage == failed_stage
+        assert trace.failure_category == failure_category
+        assert trace.final_answer == ""
+        assert trace.duration_ms == 4000.0
+        assert trace.review_trace is None
+        assert trace.reviewer_events[0].input_snapshot == {}
+        assert trace.reviewer_events[0].output_snapshot == {}
+
+        if failed_stage == "revision":
+            assert trace.revision_events[0].error == failure_category
+            assert trace.revision_events[0].input_snapshot == {}
+            assert len(trace.reviewer_events) == 1
+        else:
+            assert len(trace.reviewer_events) == 2
+            assert trace.reviewer_events[1].error == failure_category
+            assert trace.reviewer_events[1].input_snapshot == {}

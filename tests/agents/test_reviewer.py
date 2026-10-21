@@ -16,6 +16,7 @@ def make_structured_llm(
     final_answer="the final answer",
     feedback="looks good",
     evidence_sufficient=True,
+    decision="approve",
     usage_metadata=None,
 ):
     """Mirrors tests/agents/test_planner.py's make_structured_llm: builds a
@@ -24,6 +25,7 @@ def make_structured_llm(
     LangChain's include_raw=True contract.
     """
     parsed = mocker.Mock(
+        decision=decision,
         final_answer=final_answer,
         feedback=feedback,
         evidence_sufficient=evidence_sufficient,
@@ -43,6 +45,7 @@ def make_state(**overrides) -> AgentState:
         draft_answer="Tool result:\nsome context",
         selected_tool="doc_retriever",
         retrieved_sources=["source.md"],
+        revision_enabled=True,
         trace_id="trace-1",
     )
     defaults.update(overrides)
@@ -74,6 +77,145 @@ class TestReviewerNode:
         assert result.final_answer == "X is ..."
         assert result.review_feedback == "clear and grounded"
 
+    def test_approves_and_records_the_decision(self, mocker):
+        mock_llm = make_structured_llm(mocker, decision="approve", final_answer="X is ...")
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state()
+
+        result = reviewer_node(state)
+
+        assert result.review_decision == "approve"
+        assert result.review_outcome == "approved"
+        assert result.revision_count == 0
+        assert result.final_answer == "X is ..."
+        assert result.initial_review_decision == "approve"
+        assert result.initial_review_feedback == "looks good"
+
+    def test_requests_a_revision_with_actionable_feedback(self, mocker):
+        feedback = "Name the three source types explicitly; the evidence lists them."
+        mock_llm = make_structured_llm(mocker, decision="revise", feedback=feedback)
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state()
+
+        result = reviewer_node(state)
+
+        assert result.review_decision == "revise"
+        assert result.revision_feedback == feedback
+        assert result.review_outcome is None
+        assert result.final_answer is None
+        assert result.initial_review_decision == "revise"
+        assert result.initial_review_feedback == feedback
+
+    def test_single_pass_revise_uses_the_reviewers_answer_without_revision(self, mocker):
+        mock_llm = make_structured_llm(
+            mocker,
+            decision="revise",
+            final_answer="the reviewer's improved answer",
+            feedback="Add the missing source types.",
+        )
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state(revision_enabled=False)
+
+        result = reviewer_node(state)
+
+        assert result.review_decision == "revise"
+        assert result.review_outcome == "revision_skipped"
+        assert result.final_answer == "the reviewer's improved answer"
+        assert result.revision_count == 0
+
+    def test_no_tool_route_never_requests_a_revision(self, mocker):
+        mock_llm = make_structured_llm(
+            mocker,
+            decision="revise",
+            final_answer="No technical question or no tool selected, try again",
+            feedback="No tool output is available.",
+        )
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state(selected_tool="none", retrieved_sources=None)
+
+        result = reviewer_node(state)
+
+        assert result.review_outcome == "revision_skipped"
+        assert result.final_answer == "No technical question or no tool selected, try again"
+        prompt = mock_llm.with_structured_output.return_value.invoke.call_args.args[0]
+        assert "No revision attempt is available" in prompt
+
+    def test_revise_without_actionable_feedback_does_not_request_revision(self, mocker):
+        mock_llm = make_structured_llm(
+            mocker,
+            decision="revise",
+            final_answer="the reviewer's improved answer",
+            feedback="   ",
+        )
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state()
+
+        result = reviewer_node(state)
+
+        assert result.review_outcome == "revision_skipped"
+        assert result.final_answer == "the reviewer's improved answer"
+        assert result.revision_feedback is None
+
+    def test_final_review_budget_exhausted_finalizes_with_a_limitation(self, mocker):
+        mock_llm = make_structured_llm(
+            mocker,
+            decision="revise",
+            final_answer="the revised answer",
+            feedback="The answer still omits the source types.",
+        )
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state(revision_count=1)
+
+        result = reviewer_node(state)
+
+        assert result.review_decision == "revise"
+        assert result.review_outcome == "budget_exhausted"
+        assert result.final_answer.startswith("the revised answer")
+        assert "revised once" in result.final_answer
+        assert result.revision_count == 1
+
+    def test_final_review_approval_marks_the_answer_as_revised(self, mocker):
+        mock_llm = make_structured_llm(mocker, decision="approve", final_answer="the revised answer")
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state(revision_count=1)
+
+        result = reviewer_node(state)
+
+        assert result.review_decision == "approve"
+        assert result.review_outcome == "revised"
+        assert result.final_answer == "the revised answer"
+
+    def test_abstains_when_the_reviewer_chooses_abstain(self, mocker):
+        mock_llm = make_structured_llm(
+            mocker,
+            decision="abstain",
+            final_answer="I cannot answer reliably.",
+            feedback="The evidence is incomplete.",
+        )
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state(selected_tool="architecture_advisor", retrieved_sources=None)
+
+        result = reviewer_node(state)
+
+        assert result.review_decision == "abstain"
+        assert result.review_outcome == "abstained"
+        assert result.final_answer == "I couldn't produce a reliable answer to this question."
+        assert result.revision_count == 0
+
+    def test_review_prompt_contains_quality_criteria_and_revision_policy(self, mocker):
+        mock_llm = make_structured_llm(mocker)
+        mocker.patch("app.agents.reviewer.get_llm", return_value=mock_llm)
+        state = make_state()
+
+        reviewer_node(state)
+
+        review_prompt = mock_llm.with_structured_output.return_value.invoke.call_args.args[0]
+        assert "correctness" in review_prompt.lower()
+        assert "evidence support" in review_prompt.lower()
+        assert "relevance" in review_prompt.lower()
+        assert "completeness" in review_prompt.lower()
+        assert "single revision is available" in review_prompt.lower()
+
     @pytest.mark.parametrize(
         "draft_answer",
         [
@@ -104,6 +246,8 @@ class TestReviewerNode:
         assert result.review_feedback == (
             "The retrieved sources did not sufficiently support an answer; abstained to avoid unsupported claims."
         )
+        assert result.review_decision == "abstain"
+        assert result.review_outcome == "abstained"
         review_prompt = mock_llm.with_structured_output.return_value.invoke.call_args.args[0]
         assert "source presence alone does not establish evidence sufficiency" in review_prompt
         assert "only partially support" in review_prompt
@@ -119,6 +263,8 @@ class TestReviewerNode:
 
         assert result.final_answer == "I couldn't find relevant documentation to support an answer to this question."
         assert result.review_feedback == "No retrieved sources were available; abstained to avoid an unsupported answer."
+        assert result.review_decision == "abstain"
+        assert result.review_outcome == "abstained"
         get_llm.assert_not_called()
         assert result.stage_llm_usage["reviewer"] == {"llm_calls": 0, "token_usage": None}
 

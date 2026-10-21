@@ -11,6 +11,7 @@ the entire evaluation run.
 """
 from dataclasses import asdict
 from datetime import datetime
+import argparse
 import json
 import os
 import subprocess
@@ -49,13 +50,19 @@ slow_execution_threshold = int(validated_env.get("SLOW_EXECUTION_THRESHOLD", 100
 # a timeout error and the runner moves on to the next question.
 question_timeout = int(validated_env.get("QUESTION_TIMEOUT", 60))
 
-def ask_assistant(question: str, timeout: int | None = None) -> QueryResponse:
+def ask_assistant(
+    question: str,
+    timeout: int | None = None,
+    revision_enabled: bool = False,
+) -> QueryResponse:
     """Send a question to the AI assistant via the CLI and return the JSON result.
 
     Args:
         question: The user question to evaluate.
         timeout:  Maximum seconds to wait for the subprocess. Defaults to the
                   QUESTION_TIMEOUT env var (120s). Pass 0 or None to disable.
+        revision_enabled: Pass --revision to the CLI so the bounded revision
+                  path is available for this run.
 
     Returns:
         Parsed QueryResponse with all pipeline fields.
@@ -66,10 +73,13 @@ def ask_assistant(question: str, timeout: int | None = None) -> QueryResponse:
         json.JSONDecodeError: If the output is not valid JSON.
     """
     effective_timeout = timeout if timeout is not None else question_timeout
+    command = [sys.executable, MAIN_SCRIPT, "--question", question, "--json"]
+    if revision_enabled:
+        command.append("--revision")
 
     try:
         result = subprocess.run(
-            [sys.executable, MAIN_SCRIPT, "--question", question, "--json"],
+            command,
             capture_output=True,
             text=True,
             cwd=ROOT_DIR,
@@ -132,7 +142,10 @@ def score_keywords(
     }
 
 
-def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
+def run_evaluation(
+    dataset_path: str | None = None,
+    revision_enabled: bool = False,
+) -> list[dict[str, Any]]:
     """Run the evaluation suite against the retrieval pipeline.
 
     Results are saved progressively after each question so that partial
@@ -141,7 +154,9 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
 
     Args:
         dataset_path: Path to the evaluation JSON file.
-                      Defaults to evaluation/datasets/retrieval_eval.json.
+                      Defaults to evaluation/datasets/retrieval_eval_smoke.json.
+        revision_enabled: Run the same dataset through the graph with the
+                      bounded revision path enabled.
 
     Returns:
         List of result dicts, one per evaluation item.
@@ -160,12 +175,14 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
     results_dir = os.path.join(ROOT_DIR, "evaluation", "results")
     os.makedirs(results_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    results_file = os.path.join(results_dir, f"eval_{timestamp}.json")
+    mode = "revision" if revision_enabled else "single_pass"
+    results_file = os.path.join(results_dir, f"eval_{mode}_{timestamp}.json")
 
     logger.info(
         "run_evaluation_started",
         questions=len(eval_set),
         timeout_per_question=question_timeout,
+        revision_enabled=revision_enabled,
         results_file=results_file,
     )
     
@@ -178,7 +195,7 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
         )
 
         try:
-            response = ask_assistant(question)
+            response = ask_assistant(question, revision_enabled=revision_enabled)
             retrieved_sources = response.retrieved_sources
 
             # Keyword matching
@@ -203,9 +220,83 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                 retrieved_sources_list = list(retrieved_sources)
 
             # Execution trace
-            planner_event = response.execution_trace.planner_events[0]
-            worker_event = response.execution_trace.worker_events[0]
-            reviewer_event = response.execution_trace.reviewer_events[0]
+            trace = response.execution_trace
+            planner_event = trace.planner_events[0]
+            worker_event = trace.worker_events[0]
+            reviewer_event = trace.reviewer_events[0]
+            final_reviewer_event = (
+                trace.reviewer_events[1] if len(trace.reviewer_events) > 1 else None
+            )
+            revision_event = trace.revision_events[0] if trace.revision_events else None
+
+            timing_metrics = {
+                "trace": {
+                    "trace_id": trace.trace_id,
+                    "started_at": trace.started_at,
+                    "ended_at": trace.ended_at,
+                    "duration_ms": trace.duration_ms
+                },
+                "planner": {
+                    "started_at": planner_event.started_at,
+                    "ended_at": planner_event.ended_at,
+                    "duration_ms": planner_event.duration_ms
+                },
+                "worker": {
+                    "started_at": worker_event.started_at,
+                    "ended_at": worker_event.ended_at,
+                    "duration_ms": worker_event.duration_ms
+                },
+                "reviewer": {
+                    "started_at": reviewer_event.started_at,
+                    "ended_at": reviewer_event.ended_at,
+                    "duration_ms": reviewer_event.duration_ms
+                }
+            }
+            llm_usage = {
+                "planner": {
+                    "llm_calls": planner_event.llm_calls,
+                    "token_usage": planner_event.token_usage
+                },
+                "worker": {
+                    "llm_calls": worker_event.llm_calls,
+                    "token_usage": worker_event.token_usage
+                },
+                "reviewer": {
+                    "llm_calls": reviewer_event.llm_calls,
+                    "token_usage": reviewer_event.token_usage
+                },
+            }
+            total_llm_calls = (
+                planner_event.llm_calls
+                + worker_event.llm_calls
+                + reviewer_event.llm_calls
+            )
+
+            if final_reviewer_event is not None:
+                timing_metrics["reviewer_final"] = {
+                    "started_at": final_reviewer_event.started_at,
+                    "ended_at": final_reviewer_event.ended_at,
+                    "duration_ms": final_reviewer_event.duration_ms,
+                }
+                llm_usage["reviewer_final"] = {
+                    "llm_calls": final_reviewer_event.llm_calls,
+                    "token_usage": final_reviewer_event.token_usage,
+                }
+                total_llm_calls += final_reviewer_event.llm_calls
+
+            if revision_event is not None:
+                timing_metrics["revision"] = {
+                    "started_at": revision_event.started_at,
+                    "ended_at": revision_event.ended_at,
+                    "duration_ms": revision_event.duration_ms,
+                }
+                llm_usage["revision"] = {
+                    "llm_calls": revision_event.llm_calls,
+                    "token_usage": revision_event.token_usage,
+                }
+                total_llm_calls += revision_event.llm_calls
+
+            llm_usage["total_llm_calls"] = total_llm_calls
 
             result = {
                 "question": question,
@@ -215,7 +306,14 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                 "tool_input": response.tool_input,
                 "tool_output": response.tool_output,
                 "draft_answer": response.draft_answer,
+                "initial_draft_answer": response.initial_draft_answer,
                 "review_feedback": response.review_feedback,
+                "initial_review_decision": (
+                    trace.review_trace.initial_decision if trace.review_trace else None
+                ),
+                "review_decision": response.review_decision,
+                "revision_count": response.revision_count,
+                "review_outcome": response.review_outcome,
                 "retrieved_sources": retrieved_sources_list,
                 "expected_keywords": expected,
                 "matched_keywords": hits,
@@ -227,49 +325,11 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
                 "score_sources": score_sources,
                 "status": "pass" if score >= 0.5 else "fail",
                 "failure_type": classify_failure(item, response, score, score_sources),
-                "timing_metrics": {
-                    "trace": {
-                        "trace_id": response.execution_trace.trace_id,
-                        "started_at": response.execution_trace.started_at,
-                        "ended_at": response.execution_trace.ended_at,
-                        "duration_ms": response.execution_trace.duration_ms
-                    },
-                    "planner": {
-                        "started_at": planner_event.started_at,
-                        "ended_at": planner_event.ended_at,
-                        "duration_ms": planner_event.duration_ms
-                    },
-                    "worker": {
-                        "started_at": worker_event.started_at,
-                        "ended_at": worker_event.ended_at,
-                        "duration_ms": worker_event.duration_ms
-                    },
-                    "reviewer": {
-                        "started_at": reviewer_event.started_at,
-                        "ended_at": reviewer_event.ended_at,
-                        "duration_ms": reviewer_event.duration_ms
-                    }
-                },
-                "llm_usage": {
-                    "planner": {
-                        "llm_calls": planner_event.llm_calls,
-                        "token_usage": planner_event.token_usage
-                    },
-                    "worker": {
-                        "llm_calls": worker_event.llm_calls,
-                        "token_usage": worker_event.token_usage
-                    },
-                    "reviewer": {
-                        "llm_calls": reviewer_event.llm_calls,
-                        "token_usage": reviewer_event.token_usage
-                    },
-                    "total_llm_calls": (
-                        planner_event.llm_calls + worker_event.llm_calls + reviewer_event.llm_calls
-                    )
-                },
+                "timing_metrics": timing_metrics,
+                "llm_usage": llm_usage,
                 "retrieval_trace": (
-                    asdict(response.execution_trace.retrieval_trace)
-                    if response.execution_trace.retrieval_trace is not None
+                    asdict(trace.retrieval_trace)
+                    if trace.retrieval_trace is not None
                     else None
                 ),
             }
@@ -323,11 +383,12 @@ def run_evaluation(dataset_path: str | None = None) -> list[dict[str, Any]]:
         results.append(result)
 
         # Progressive save — write after every question so partial results survive
-        _save_progress(results, results_file, len(eval_set))
+        _save_progress(results, results_file, len(eval_set), mode=mode)
 
     logger.info(
         "run_evaluation_completed",
         total=len(results),
+        revision_enabled=revision_enabled,
         results_file=results_file,
     )
 
@@ -379,6 +440,7 @@ def _save_progress(
     results: list[dict[str, Any]],
     results_file: str,
     total_questions: int,
+    mode: str = "single_pass",
 ) -> None:
     """Persist current results to disk after each question.
 
@@ -389,6 +451,8 @@ def _save_progress(
         results:          Accumulated result dicts so far.
         results_file:     Absolute path to the output JSON file.
         total_questions:  Total number of questions in the dataset.
+        mode:             "single_pass" or "revision"; stored in the summary
+                          so comparison reports can label the source run.
     """
     evaluated = len(results)
     passed = sum(1 for r in results if r["status"] == "pass")
@@ -397,9 +461,15 @@ def _save_progress(
     timeouts = sum(1 for r in results if r["status"] == "timeout")
     avg_score = sum(r["score"] for r in results) / evaluated if evaluated else 0.0
     avg_score_sources = sum(r["score_sources"] for r in results) / evaluated if evaluated else 0.0
+    revisions_attempted = sum(1 for r in results if r.get("revision_count", 0) > 0)
+    abstained = sum(1 for r in results if r.get("review_outcome") == "abstained")
+    budget_exhausted = sum(
+        1 for r in results if r.get("review_outcome") == "budget_exhausted"
+    )
 
     summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+        "mode": mode,
         "total_questions": total_questions,
         "evaluated": evaluated,
         "remaining": total_questions - evaluated,
@@ -409,6 +479,9 @@ def _save_progress(
         "timeouts": timeouts,
         "avg_score": round(avg_score, 4),
         "avg_score_sources": round(avg_score_sources, 4),
+        "revisions_attempted": revisions_attempted,
+        "abstained": abstained,
+        "budget_exhausted": budget_exhausted,
     }
 
     with open(results_file, "w", encoding="utf-8") as f:
@@ -420,5 +493,22 @@ def _save_progress(
         file=results_file,
     )
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the assistant evaluation suite.")
+    parser.add_argument(
+        "--dataset",
+        default=None,
+        help="Evaluation dataset JSON path (defaults to the smoke dataset).",
+    )
+    parser.add_argument(
+        "--revision",
+        action="store_true",
+        default=False,
+        help="Enable the bounded review-and-revision loop for this run.",
+    )
+    args = parser.parse_args()
+    run_evaluation(args.dataset, revision_enabled=args.revision)
+
+
 if __name__ == "__main__":
-    run_evaluation()
+    main()

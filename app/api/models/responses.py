@@ -14,6 +14,21 @@ class AskResponse(BaseModel):
         default=None,
         description="Source files used during retrieval, if any.",
     )
+    review_decision: str | None = Field(
+        default=None,
+        description="The reviewer's final decision: approve, revise, or abstain.",
+    )
+    revision_count: int = Field(
+        default=0,
+        description="Number of revisions attempted (0 or 1).",
+    )
+    review_outcome: str | None = Field(
+        default=None,
+        description=(
+            "Final review outcome: approved, revised, abstained, "
+            "budget_exhausted, or revision_skipped."
+        ),
+    )
 
 
 class HealthResponse(BaseModel):

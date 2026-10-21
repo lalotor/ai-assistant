@@ -1,17 +1,18 @@
 # Reliability policy
 
-This document defines the initial failure policy for the Planner → Worker →
-Reviewer workflow and its retrieval dependencies. It guides implementation;
-it does not claim that the current runtime already enforces these behaviors.
+This document defines the failure policy for the Planner → Worker → Reviewer
+workflow, its optional one-revision path, and its retrieval dependencies. It
+guides implementation; it does not claim that every behavior below is
+exercised by every question.
 
 ## Execution outcomes
 
 | Outcome | Meaning |
 |---|---|
-| `success` | The workflow completed normally and the Reviewer produced the Final Answer. |
+| `success` | The workflow completed normally and the Reviewer produced the Final Answer. This includes the explicit single-pass policy where a reviewer requests revision but no revision path is enabled (`revision_skipped`). |
 | `recovered` | A transient failure occurred, but a bounded retry restored the normal path without a known loss of capability. Emit only when the retry is observable; the current provider-client integration does not expose a stable retry-attempt signal, so this outcome is reserved and not emitted. |
-| `degraded` | The workflow can safely return a qualified limitation or use partial capabilities, but a known strategy or evidence source was unavailable. |
-| `failed` | The workflow could not safely produce a reviewed, evidence-supported answer. |
+| `degraded` | The workflow can safely return a qualified limitation or use partial capabilities, but a known strategy or evidence source was unavailable. Evidence abstention (`abstained`) and a revision whose final review still requests changes (`budget_exhausted`) are degraded outcomes. |
+| `failed` | The workflow could not safely produce a reviewed, evidence-supported answer. Reviewer, final-reviewer, or revision failures are terminal and never return the draft as the answer. |
 
 A retry or fallback must never be reported as normal success when it leaves a
 known limitation. A degraded answer must state that limitation and preserve any
@@ -34,7 +35,36 @@ Final Answer.
 | Reranker | Reranking call fails after candidate retrieval | Apply the LLM retry policy. If it is still unavailable but candidates exist, retain candidates in their existing deterministic merge order without claiming they were reranked; use them only if evidence is sufficient. | Return a qualified answer with available sources and mark execution degraded; otherwise abstain. | Record reranker failure, fallback use, and final sources. |
 | Worker tool | Unexpected tool failure not handled by a safe local fallback | Stop the workflow; raise `ToolExecutionError` without embedding the underlying error text in a draft. | Fail explicitly; the Reviewer must not convert an error message into an answer. | Record the `tool_execution_error` category and exception type; no reviewed answer is produced. |
 | Planner/Worker boundary | Selected tool is not registered | Raise `InvalidToolSelectionError`; do not invoke a substitute or pass an error draft to the Reviewer. | Fail explicitly. | Record `invalid_tool_selection` without treating the invalid selection as a tool result. |
-| Reviewer | Provider error, invalid output, or timeout after a draft exists | Apply the LLM retry policy, then fail if review cannot complete. Never treat the unreviewed draft as the Final Answer. | Fail explicitly; do not return the draft as a successful or degraded answer. | Record Reviewer failure and that no Final Answer was produced. |
+| Reviewer (initial pass) | Provider error, invalid output, missing/invalid decision, or timeout after a draft exists | Apply the LLM retry policy, then fail if review cannot complete. The structured decision is required; malformed output is not retried unchanged. Never treat the unreviewed draft as the Final Answer. | Fail explicitly; do not return the draft as a successful or degraded answer. | Record Reviewer failure and that no Final Answer was produced. |
+| Revision | Provider error, invalid output, empty revision, or timeout after the reviewer requested changes | Apply the LLM retry policy, then fail. Do not restart the graph, retry the tool, or return the pre-revision draft as if it were approved. | Fail explicitly; no revised answer is returned. | Record the `revision` stage failure and available timings. |
+| Reviewer (final pass after revision) | Provider error, invalid output, missing/invalid decision, or timeout | Apply the LLM retry policy, then fail. The revised draft is not reviewer-approved and must not be presented as approved. | Fail explicitly; do not silently return the revised draft. | Record the `reviewer_final` stage failure; the trace outcome is `failed`. |
+| Reviewer / graph | Revision budget already used and the final Reviewer still requests revision | Do not route to another revision. End the graph, keep the revised answer, append an explicit provisional-answer limitation, and mark the outcome `budget_exhausted`. | Return the revised answer with its limitation; trace outcome is `degraded`. | Record both review decisions, one revision, and the exhausted budget. |
+| Reviewer / graph | Revision is disabled and the Reviewer requests revision | Do not call the revision step. Use the Reviewer's inline `final_answer` and mark `review_outcome=revision_skipped`. | Return the single-pass reviewed answer; trace outcome remains `success`. | Record the reviewer decision and that no revision was attempted. |
+
+## Review and revision policy
+
+- The Reviewer returns a validated decision: `approve`, `revise`, or
+  `abstain`. A `revise` decision is actionable only when `feedback` is
+  non-empty; otherwise the graph does not start a revision.
+- Revision is opt-in and bounded to one attempt. The graph checks
+  `revision_enabled`, the decision, the feedback, and `revision_count < 1`
+  before routing to the `revision` node. The final Reviewer pass cannot
+  request another revision, even if its prompt output says `revise`.
+- A revision receives the original question, current draft, reviewer
+  feedback, the existing tool output, and the existing retrieved-source
+  list. It does not re-run the selected tool or re-retrieve documents.
+  `retrieved_sources` and `retrieval_trace` are retained unchanged.
+- The final Reviewer reuses the same structured contract and evidence gate
+  as the initial Reviewer. For Doc Retriever answers, a final
+  `evidence_sufficient=false` produces a deterministic abstention; it never
+  authorizes inventing evidence during revision.
+- If the final Reviewer still requests changes after one revision, the graph
+  ends with the revised answer plus an explicit provisional limitation and
+  `review_outcome=budget_exhausted`. This is a degraded result, not a second
+  revision and not a normal approval.
+- If revision is disabled and the Reviewer requests changes, the single-pass
+  behavior is preserved: the Reviewer's inline `final_answer` is returned
+  and `review_outcome=revision_skipped`. No extra LLM call is made.
 
 ## Retry and timeout bounds
 
@@ -44,9 +74,12 @@ Final Answer.
 - LLM calls use the OpenAI client's transient-error retry policy, configured
   for two retries (three total attempts). The client honors `Retry-After` and
   otherwise uses exponential backoff with jitter for retryable failures.
-- Each LLM provider request has a 30-second timeout. This replaces the
-  provider SDK's 600-second default; it is an initial per-operation limit, not
-  an end-to-end workflow deadline.
+- Each LLM provider request, including a revision or final-review request, has
+  a 30-second timeout. This replaces the provider SDK's 600-second default; it
+  is an initial per-operation limit, not an end-to-end workflow deadline.
+- A reviewer request for revision does not add a retry layer around the
+  revision call. The revision and its final review use the same provider retry
+  policy as the initial review; an exhausted retry budget fails the graph.
 - Avoid nested retries. Configure the existing LLM client rather than wrapping
   each call in a second retry policy.
 - Set external-call timeouts at the client/integration boundary. Verify whether
@@ -84,16 +117,24 @@ successful search with zero results and preserve provenance for every
 returned source.
 
 Successful Execution Traces classify normal completion as `success` and
-retrieval fallback or evidence abstention as `degraded`. A graph-stage failure
-retains the existing exception/API failure path but also emits a safe failed
-Execution Trace in structured logs. It identifies the failing stage, category,
-exception type, and available stage timings; snapshots and retrieval details
-are omitted so the failed trace does not contain user input, document content,
-or retrieval queries. Routine application logs record lengths/counts and
-structured categories rather than user questions, code, retrieved excerpts,
+retrieval fallback, evidence abstention, or review-budget exhaustion as
+`degraded`. A graph-stage failure retains the existing exception/API failure
+path but also emits a safe failed Execution Trace in structured logs. It
+identifies the failing stage (`revision` or `reviewer_final` when applicable),
+category, exception type, and available stage timings; snapshots and retrieval
+details are omitted so the failed trace does not contain user input, document
+content, or retrieval queries. Routine application logs record lengths/counts
+and structured categories rather than user questions, code, retrieved excerpts,
 drafts, or final answers. The configured provider SDK retries internally but
 does not expose a stable retry-attempt callback to the runtime, so a
 `recovered` outcome is intentionally not emitted.
+
+Revision-enabled traces contain two Reviewer events (`reviewer` and
+`reviewer_final`), one Revision event, and a Review Trace with the initial and
+final decisions, feedback, revision count, and outcome. Single-pass traces
+contain one Reviewer event and no Revision event. The response exposes the
+final `review_decision`, `revision_count`, and `review_outcome`; source
+provenance remains the same list returned by the Worker.
 
 Do not put raw prompts, document contents, credentials, or unfiltered provider
 exception text into routine telemetry. Successful and degraded answers retain
@@ -156,3 +197,7 @@ claim of deterministic resolution or a blocker to closing the Week 10 scope.
 - Validate how reliably the Reviewer identifies irrelevant and partial
   evidence. The current sufficiency signal is LLM-judged; no deterministic
   semantic proof exists for source relevance.
+- Revision quality is not guaranteed by the existence of a revision step. The
+  Week 11 comparison must be read as keyword-proxy evidence, with manual
+  inspection of changed, unchanged, and regressed answers; revision must not
+  be enabled by default unless that comparison supports it.

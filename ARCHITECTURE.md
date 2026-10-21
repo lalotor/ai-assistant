@@ -26,7 +26,7 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
 
 ### Key Capabilities
 
-- **Multi-Agent Orchestration**: Planner → Worker → Reviewer workflow
+- **Multi-Agent Orchestration**: Planner → Worker → Reviewer workflow, with an optional bounded revision and final review
 - **Tool-Based Routing**: Intelligent selection between code explanation, documentation retrieval, and architecture advice
 - **RAG-Powered Knowledge Base**: Vector store-based document retrieval with FAISS
 - **Structured Logging**: Production-ready observability with correlation tracking
@@ -87,8 +87,11 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
 │  ┌──────────┐      ┌──────────┐      ┌──────────┐               │
 │  │ Planner  │─────▶│  Worker  │─────▶│ Reviewer │               │
 │  │  Agent   │      │  Agent   │      │  Agent   │               │
-│  └──────────┘      └──────────┘      └──────────┘               │
-│       │                  │                  │                   │
+│  └──────────┘      └──────────┘      └────┬─────┘               │
+│       │                  │                │                     │
+│       │                  │        approve/abstain → END         │
+│       │                  │        revise → Revision Agent       │
+│       │                  │                  → Reviewer (final)  │
 │       │                  ▼                  │                   │
 │       │         ┌─────────────────┐         │                   │
 │       │         │  Tool Registry  │         │                   │
@@ -199,27 +202,50 @@ class AgentState(BaseModel):
     selected_tool: Optional[str]       # Tool to execute
     tool_input: Optional[Dict]         # Tool parameters
     tool_output: Optional[str]         # Tool execution result
-    draft_answer: Optional[str]        # Worker's draft response
+    draft_answer: Optional[str]        # Current (possibly revised) draft
+    initial_draft_answer: Optional[str]# Pre-revision draft, if revised
     final_answer: Optional[str]        # Reviewer's final answer
-    review_feedback: Optional[str]     # Reviewer's feedback
+    review_feedback: Optional[str]     # Final Reviewer feedback
+    initial_review_decision: Optional[Literal["approve", "revise", "abstain"]]
+    initial_review_feedback: Optional[str]
+    review_decision: Optional[Literal["approve", "revise", "abstain"]]
+    revision_feedback: Optional[str]   # Actionable feedback for the revision
+    revision_count: int = 0            # 0 or 1
+    revision_enabled: bool = False
+    review_outcome: Optional[Literal[
+        "approved", "revised", "abstained",
+        "budget_exhausted", "revision_skipped"
+    ]]
 ```
 
 **State Flow:**
 ```
-user_input → plan → selected_tool → tool_output → draft_answer → final_answer
+user_input → plan → selected_tool → tool_output → draft_answer
+           → review_decision
+           ├─ approve/abstain → final_answer
+           └─ revise (enabled, count 0) → revision → final review → final_answer
 ```
 
 #### **Graph Orchestration** (`graph.py`)
 
 **Workflow Definition:**
 ```
-START → planner → worker → reviewer → END
+START → planner → worker → reviewer
+                           ├─ approve / abstain → END
+                           └─ revise (revision_enabled and revision_count < 1)
+                                → revision → reviewer_final → END
 ```
+
+The conditional edge is `route_after_review`. It requires all of the
+following before routing to `revision`: `revision_enabled` is true, the
+decision is `revise`, the revision count is zero, and feedback is non-empty.
+`reviewer_final` has no outgoing revision edge, so a final `revise` cannot
+start another loop.
 
 **Graph Compilation:**
 - Uses `StateGraph` from LangGraph
-- Linear workflow (no conditional routing)
-- No checkpointer (stateless execution)
+- Conditional routing for the bounded revision path
+- No checkpointer (stateless execution); revision count is per request
 
 #### **Planner Agent** (`planner.py`)
 
@@ -267,25 +293,53 @@ if selected_tool == "architecture_advisor":
 
 #### **Reviewer Agent** (`reviewer.py`)
 
-**Purpose**: Reviews draft answer and produces final response
+**Purpose**: Reviews the draft against the tool output, returns an explicit
+decision, and produces the reviewed final answer.
 
 **Process:**
-1. Receives draft answer from worker
-2. Evaluates quality and completeness
-3. Improves answer if needed
-4. Provides feedback
+1. Receives the draft answer and the Worker's tool output/retrieved sources.
+2. Evaluates correctness, evidence support, relevance, and completeness.
+3. Returns `approve`, `revise`, or `abstain` plus actionable feedback.
+4. On a revision-enabled first pass, a `revise` decision with non-empty
+   feedback routes to the revision node.
+5. A second pass (`reviewer_final`) evaluates the revised draft using the same
+   evidence gate but cannot request another revision.
 
 **Output Model:**
 ```python
 class ReviewResult(BaseModel):
+    decision: Literal["approve", "revise", "abstain"]
     final_answer: str
     feedback: str
     evidence_sufficient: bool
 ```
 
 For Doc Retriever answers, the Reviewer marks whether the retrieved excerpts
-directly support the response. If it reports insufficient evidence, the
-application returns a standard abstention instead of the proposed answer.
+directly support the response. If it reports insufficient evidence on either
+pass, the application returns a standard abstention instead of the proposed
+answer. A `revise` decision in single-pass mode uses the Reviewer's inline
+`final_answer` and records `revision_skipped`; it does not add an LLM call.
+
+**Stage keys:** the first pass records timing/usage under `reviewer`; the
+post-revision pass uses `reviewer_final`.
+
+#### **Revision Agent** (`revision.py`)
+
+**Purpose**: Rewrite the draft once using the Reviewer's actionable feedback
+and the evidence already collected by the Worker.
+
+**Process:**
+1. Receives the original question, current draft, reviewer feedback, tool
+   output, and retrieved-source list.
+2. Calls the LLM once with a prompt that forbids inventing unsupported facts.
+3. Replaces `draft_answer`, increments `revision_count`, and records the
+   `revision` stage timing/usage.
+4. Does not re-run the selected tool or re-retrieve documents. The original
+   `retrieved_sources` and `retrieval_trace` remain on the state for the final
+   answer and trace.
+
+An empty revision, provider failure, or timeout raises a stage error; the graph
+fails through the Week 10 policy rather than returning the unreviewed draft.
 
 ---
 
@@ -610,11 +664,26 @@ def get_llm(model="gpt-5-nano", temperature=0):
 ┌──────────────────────────────────────────┐
 │ Reviewer Agent                           │
 │ - Review draft_answer                    │
-│ - Improve if needed (LLM)                │
+│ - Decision: approve / revise / abstain   │
 │ - Set: final_answer, review_feedback     │
 └──────┬───────────────────────────────────┘
        │
-       ▼
+       ├─ revise + revision enabled + budget available
+       │      ▼
+       │  ┌──────────────────────────────────┐
+       │  │ Revision Agent                   │
+       │  │ - Reuse tool output/evidence     │
+       │  │ - Rewrite draft from feedback    │
+       │  │ - Set: draft_answer, count=1     │
+       │  └──────────────┬───────────────────┘
+       │                 ▼
+       │  ┌──────────────────────────────────┐
+       │  │ Reviewer Agent (final)           │
+       │  │ - No further revision allowed    │
+       │  │ - Set: final_answer, outcome     │
+       │  └──────────────┬───────────────────┘
+       │                 │
+       ▼                 ▼
 ┌──────────────┐
 │ Display to   │
 │    user      │
@@ -776,8 +845,13 @@ ai-assistant/
 │   │   ├── state.py            # Agent state model
 │   │   ├── planner.py          # Planner agent (tool selection)
 │   │   ├── worker.py           # Worker agent (tool execution)
-│   │   ├── reviewer.py         # Reviewer agent (answer refinement)
-│   │   └── model.py            # Pydantic models (ToolDecision, ReviewResult)
+│   │   ├── reviewer.py         # Reviewer agent (decision + final answer)
+│   │   ├── revision.py         # One evidence-grounded revision
+│   │   └── graph.py            # Conditional review/revision routing
+│   │
+│   ├── contracts/agent.py      # AgentState, ReviewResult, ToolDecision
+│   ├── prompts/reviewer.txt    # Review rubric and decision contract
+│   ├── prompts/revision.txt    # Revision instruction
 │   │
 │   ├── rag/                     # RAG pipeline
 │   │   ├── ingestion.py        # Document loading
@@ -953,7 +1027,10 @@ structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 | `node_started` | Agents | Agent execution begins |
 | `tool_decision_made` | Planner | Tool selection |
 | `tool_execution_completed` | Worker | Tool execution finished |
-| `review_complete` | Reviewer | Final answer generated |
+| `review_complete` | Reviewer | Review decision/final answer generated |
+| `reviewer_requested_revision` | Reviewer | Actionable revision requested |
+| `revision_completed` | Revision | Revised draft produced |
+| `reviewer_budget_exhausted` | Reviewer | Final pass still requested changes after one revision |
 | `retrieved_document` | Retriever | Document retrieved from vector store |
 | `env_validation_successful` | Validator | Environment validated |
 
@@ -1133,7 +1210,8 @@ The evaluation runner uses a **CLI subprocess approach** rather than importing t
 
 ### Evaluation Dataset
 
-**Location**: `evaluation/datasets/retrieval_eval.json`
+**Location**: `evaluation/datasets/retrieval_eval_full.json` (the two-question
+smoke dataset remains at `retrieval_eval_smoke.json`).
 
 **Structure per question:**
 ```json
@@ -1145,14 +1223,13 @@ The evaluation runner uses a **CLI subprocess approach** rather than importing t
 }
 ```
 
-**Current Coverage** (10 questions across 4 categories):
+**Current Coverage** (11 questions across 3 categories):
 
 | Category | Count | Description |
 |----------|-------|-------------|
-| `doc_retriever` | 6 | Questions targeting RAG retrieval from `/data/docs/` |
+| `doc_retriever` | 7 | Questions targeting RAG retrieval from `/data/docs/` |
 | `architecture_advisor` | 2 | Architecture/design reasoning questions |
 | `code_explainer` | 2 | Code snippet explanation questions |
-| `failure` | 1 | Anti-hallucination test (asks about non-existent topic) |
 
 **Evaluation Scenarios:**
 - **Exact lookup**: Specific facts from documentation (e.g., cache TTL values)
@@ -1197,7 +1274,12 @@ The runner captures full execution traces from the `--json` output for each ques
 | `tool_input` | Planner agent | Inspect what was passed to the tool |
 | `tool_output` | Worker agent | Raw tool execution result |
 | `draft_answer` | Worker agent | Pre-review answer |
-| `review_feedback` | Reviewer agent | Quality assessment |
+| `review_feedback` | Reviewer agent | Final quality assessment |
+| `review_decision` | Reviewer agent | Final `approve` / `revise` / `abstain` |
+| `revision_count` | Graph state | 0 or 1 revisions attempted |
+| `review_outcome` | Graph state | `approved`, `revised`, `abstained`, `budget_exhausted`, or `revision_skipped` |
+| `revision_events` | Execution trace | Revision timing/usage/snapshots, when attempted |
+| `review_trace` | Execution trace | Initial/final decisions, feedback, revision count |
 | `retrieved_sources` | doc_retriever tool | Files used for RAG context |
 
 ### Result Persistence
@@ -1242,11 +1324,25 @@ Results are saved as timestamped JSON files in `evaluation/results/`:
 ### Running Evaluations
 
 ```bash
-# Run the full evaluation suite
-python -m evaluation.runner
+# Run the full single-pass evaluation suite
+python -m evaluation.runner \
+  --dataset evaluation/datasets/retrieval_eval_full.json
 
-# Results saved to evaluation/results/eval_<timestamp>.json
+# Run the same dataset with bounded revision enabled
+python -m evaluation.runner \
+  --dataset evaluation/datasets/retrieval_eval_full.json \
+  --revision
+
+# Compare repeated runs per mode (globs allowed)
+python -m evaluation.compare \
+  --baseline "evaluation/results/eval_single_pass_*.json" \
+  --revision "evaluation/results/eval_revision_*.json"
 ```
+
+Results are saved to `evaluation/results/eval_single_pass_<timestamp>.json` or
+`eval_revision_<timestamp>.json`. The comparison CLI writes
+`evaluation/reports/revision_comparison.{json,md}` with aggregate and
+per-question quality, latency, LLM-call, token, and review-outcome deltas.
 
 ---
 
@@ -1362,5 +1458,6 @@ The system is production-ready for single-user scenarios and can be extended to 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2026-10-20 | Week 11: structured review decisions, optional one-revision path, revision tracing, single-pass vs. revision evaluation comparison |
 | 1.1 | 2026-06-23 | Week 6: Added Evaluation Framework section, updated Entry Point for dual-mode CLI, updated project structure with evaluation/ directory, marked evaluation milestones in Future Enhancements |
 | 1.0 | 2026-05-08 | Initial architecture documentation |

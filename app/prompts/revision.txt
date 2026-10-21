@@ -1,0 +1,26 @@
+You are revising an AI-generated answer using a reviewer's specific feedback.
+
+User Question:
+{user_input}
+
+Current draft answer:
+{draft_answer}
+
+Reviewer feedback (the deficiency to correct):
+{review_feedback}
+
+Tool output / available evidence:
+{tool_output}
+
+Retrieved sources:
+{retrieved_sources}
+
+Selected tool:
+{selected_tool}
+
+Instructions:
+- Correct the specific deficiency described in the reviewer feedback.
+- Preserve claims that are already supported by the available evidence and keep source attribution.
+- Do not add facts, identifiers, values, or conclusions that are not present in the tool output/evidence.
+- If the evidence cannot support the requested correction, say so explicitly instead of inventing support.
+- Return only the revised answer, with no preamble.

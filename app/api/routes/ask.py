@@ -53,6 +53,7 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
             runtime.run_question,
             body.question,
             body.trace_id,
+            revision_enabled=body.revision_enabled,
         )
     except Exception as exc:
         logger.error(
@@ -76,4 +77,7 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
         trace_id=trace_id,
         answer=response.final_answer,
         sources=response.retrieved_sources,
+        review_decision=response.review_decision,
+        revision_count=response.revision_count,
+        review_outcome=response.review_outcome,
     )

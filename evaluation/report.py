@@ -14,8 +14,12 @@ evaluation run.
 """
 from __future__ import annotations
 
+from collections import Counter
 import math
 from typing import Any
+
+
+_STAGES = ("planner", "worker", "reviewer", "reviewer_final", "revision")
 
 
 def _percentile(values: list[float], pct: float) -> float | None:
@@ -67,8 +71,8 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
         if r["timing_metrics"]["trace"]["duration_ms"] is not None
     ]
 
-    stage_latencies: dict[str, list[float]] = {"planner": [], "worker": [], "reviewer": []}
-    stage_llm_calls: dict[str, list[int]] = {"planner": [], "worker": [], "reviewer": []}
+    stage_latencies: dict[str, list[float]] = {stage: [] for stage in _STAGES}
+    stage_llm_calls: dict[str, list[int]] = {stage: [] for stage in _STAGES}
     total_input_tokens = 0
     total_output_tokens = 0
     total_llm_calls = 0
@@ -77,17 +81,20 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
         timing = r["timing_metrics"]
         usage = r["llm_usage"]
 
-        for stage in ("planner", "worker", "reviewer"):
-            duration = timing[stage]["duration_ms"]
-            if duration is not None:
-                stage_latencies[stage].append(duration)
+        for stage in _STAGES:
+            stage_timing = timing.get(stage)
+            if stage_timing is not None:
+                duration = stage_timing.get("duration_ms")
+                if duration is not None:
+                    stage_latencies[stage].append(duration)
 
-            stage_llm_calls[stage].append(usage[stage]["llm_calls"])
-
-            token_usage = usage[stage]["token_usage"]
-            if token_usage:
-                total_input_tokens += token_usage.get("input_tokens", 0)
-                total_output_tokens += token_usage.get("output_tokens", 0)
+            stage_usage = usage.get(stage)
+            if stage_usage is not None:
+                stage_llm_calls[stage].append(stage_usage.get("llm_calls", 0))
+                token_usage = stage_usage.get("token_usage")
+                if token_usage:
+                    total_input_tokens += token_usage.get("input_tokens", 0)
+                    total_output_tokens += token_usage.get("output_tokens", 0)
 
         total_llm_calls += usage.get("total_llm_calls", 0)
 
@@ -113,6 +120,11 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
                 retrieval_stage_latencies[stage].append(value)
 
     n_timed = len(timed_results)
+    review_outcomes = Counter(
+        r.get("review_outcome")
+        for r in timed_results
+        if r.get("review_outcome")
+    )
 
     return {
         "questions": len(results),
@@ -145,6 +157,15 @@ def build_baseline_report(results: list[dict[str, Any]]) -> dict[str, Any]:
                 (total_input_tokens + total_output_tokens) / n_timed if n_timed else None
             ),
         },
+        "review": {
+            "revisions_attempted": sum(
+                1 for r in timed_results if r.get("revision_count", 0) > 0
+            ),
+            "revision_count_total": sum(
+                r.get("revision_count", 0) for r in timed_results
+            ),
+            "outcomes": dict(sorted(review_outcomes.items())),
+        },
     }
 
 
@@ -155,6 +176,10 @@ def format_baseline_report_markdown(report: dict[str, Any], title: str = "Evalua
     def fmt(value: float | None, suffix: str = "") -> str:
         return f"{value:.1f}{suffix}" if value is not None else "n/a"
 
+    stage_latency = report["stage_latency_ms_avg"]
+    stage_calls = report["llm_calls"]["stage_avg"]
+    review = report.get("review", {})
+
     lines = [
         f"# {title}",
         "",
@@ -163,9 +188,18 @@ def format_baseline_report_markdown(report: dict[str, Any], title: str = "Evalua
         f"P50 latency:          {fmt(report['latency_ms']['p50'], ' ms')}",
         f"P95 latency:          {fmt(report['latency_ms']['p95'], ' ms')}",
         "",
-        f"Planner avg:          {fmt(report['stage_latency_ms_avg']['planner'], ' ms')}",
-        f"Worker avg:           {fmt(report['stage_latency_ms_avg']['worker'], ' ms')}",
-        f"Reviewer avg:         {fmt(report['stage_latency_ms_avg']['reviewer'], ' ms')}",
+        f"Planner avg:          {fmt(stage_latency['planner'], ' ms')}",
+        f"Worker avg:           {fmt(stage_latency['worker'], ' ms')}",
+        f"Reviewer avg:         {fmt(stage_latency['reviewer'], ' ms')}",
+    ]
+
+    if stage_latency.get("reviewer_final") is not None or stage_latency.get("revision") is not None:
+        lines.extend([
+            f"Final reviewer avg:   {fmt(stage_latency.get('reviewer_final'), ' ms')}",
+            f"Revision avg:         {fmt(stage_latency.get('revision'), ' ms')}",
+        ])
+
+    lines.extend([
         "",
         f"  vector search avg:  {fmt(report['retrieval_stage_latency_ms_avg']['vector_search'], ' ms')}",
         f"  keyword search avg: {fmt(report['retrieval_stage_latency_ms_avg']['keyword_search'], ' ms')}",
@@ -177,13 +211,25 @@ def format_baseline_report_markdown(report: dict[str, Any], title: str = "Evalua
         "",
         f"Total LLM calls:      {report['llm_calls']['total']}",
         f"Avg LLM calls/Q:      {fmt(report['llm_calls']['avg_per_question'])}",
-        f"  planner avg:        {fmt(report['llm_calls']['stage_avg']['planner'])}",
-        f"  worker avg:         {fmt(report['llm_calls']['stage_avg']['worker'])}",
-        f"  reviewer avg:       {fmt(report['llm_calls']['stage_avg']['reviewer'])}",
+        f"  planner avg:        {fmt(stage_calls['planner'])}",
+        f"  worker avg:         {fmt(stage_calls['worker'])}",
+        f"  reviewer avg:       {fmt(stage_calls['reviewer'])}",
+    ])
+
+    if stage_calls.get("reviewer_final") is not None or stage_calls.get("revision") is not None:
+        lines.extend([
+            f"  final reviewer avg: {fmt(stage_calls.get('reviewer_final'))}",
+            f"  revision avg:       {fmt(stage_calls.get('revision'))}",
+        ])
+
+    lines.extend([
         "",
         f"Total tokens:         {report['tokens']['total_tokens']}",
         f"  input tokens:       {report['tokens']['total_input_tokens']}",
         f"  output tokens:      {report['tokens']['total_output_tokens']}",
         f"Avg tokens/Q:         {fmt(report['tokens']['avg_tokens_per_question'])}",
-    ]
+        "",
+        f"Revisions attempted:  {review.get('revisions_attempted', 0)}",
+        f"Review outcomes:      {', '.join(f'{k}={v}' for k, v in review.get('outcomes', {}).items()) or 'n/a'}",
+    ])
     return "\n".join(lines)

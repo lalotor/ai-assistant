@@ -42,6 +42,7 @@ class TestRetrievalFallbackFlow:
         mocker.patch("app.agents.planner.get_llm", return_value=planner_llm)
 
         reviewed = ReviewResult(
+            decision="approve",
             final_answer=(
                 "DiffService.computeDiff takes jobId, systemAData, systemBData, "
                 "and algorithm."
