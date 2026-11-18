@@ -1,0 +1,89 @@
+[
+  {
+    "question": "Considering only your internal documentation, what inputs does DiffService take?",
+    "category": "doc_retriever",
+    "expected_keywords": [
+      "JobId",
+      "SystemAData",
+      "SystemBData",
+      "Algorithm"
+    ],
+    "expected_sources": [
+      "data/docs/java-service/src/main/java/com/example/controller/ProcessController.java"
+    ]
+  },
+  {
+    "question": "Considering only your internal documentation, enumerate the common and status-specific fields returned by get_status for processing, completed, and failed jobs, and include its not-found response.",
+    "category": "doc_retriever",
+    "expected_keywords": [
+      "job_id",
+      "status",
+      "file_id",
+      "submitted_at",
+      "_links",
+      "started_at",
+      "progress",
+      "completed_at",
+      "result",
+      "failed_at",
+      "error",
+      "job_not_found",
+      "404"
+    ],
+    "expected_sources": [
+      "data/docs/src/api.py"
+    ]
+  },
+  {
+    "question": "Considering only your internal documentation, enumerate the file-storage lifecycle tiers with their storage class and age range, and include the documented expiration and database archival policies.",
+    "category": "doc_retriever",
+    "expected_keywords": [
+      "Hot Storage",
+      "S3 Standard",
+      "0-30 days",
+      "Warm Storage",
+      "S3 Infrequent Access",
+      "30-90 days",
+      "Cold Storage",
+      "S3 Glacier",
+      "90+ days",
+      "expires_at",
+      "1 year",
+      "90 days"
+    ],
+    "expected_sources": [
+      "data/docs/architecture/data-model.md"
+    ]
+  },
+  {
+    "question": "Considering only your internal documentation, what context key does normalize_stage read, which context keys does it write, and how does it distinguish string content from an already-parsed value? Include the normalization_applied value.",
+    "category": "doc_retriever",
+    "expected_keywords": [
+      "content",
+      "json.loads",
+      "normalized_data",
+      "normalization_applied"
+    ],
+    "expected_sources": [
+      "data/docs/src/processor.py"
+    ]
+  },
+  {
+    "question": "Considering only your internal documentation, trace the asynchronous processing flow from POST /process through the four specialized queues to the client's status lookup. Name each queue in order and state the main worker action before the next handoff.",
+    "category": "doc_retriever",
+    "expected_keywords": [
+      "ingestion-queue",
+      "processing-queue",
+      "comparison-queue",
+      "notification-queue",
+      "download",
+      "normalize",
+      "Java",
+      "results",
+      "GET /status/{job_id}"
+    ],
+    "expected_sources": [
+      "data/docs/docs/async-processing.md"
+    ]
+  }
+]

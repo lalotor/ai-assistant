@@ -70,6 +70,8 @@ def worker_node(state: AgentState) -> AgentState:
 
     state.tool_output = str(tool_result)
     state.draft_answer = f"Tool result:\n{state.tool_output}"
+    if state.initial_draft_answer is None:
+        state.initial_draft_answer = state.draft_answer
     state.retrieved_sources = retrieved_sources
     state.retrieval_trace = retrieval_trace
     if state.stage_timings is None:

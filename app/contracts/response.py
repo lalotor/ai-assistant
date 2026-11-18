@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 from dataclasses import asdict, dataclass, fields
 
+from app.contracts.review import ReviewDecision, ReviewOutcome
 from app.contracts.trace import ExecutionTrace
 from app.utils.util import serialize_value
 
@@ -16,6 +17,10 @@ class QueryResponse:
     final_answer: str
     review_feedback: str
     retrieved_sources: Optional[list[str]] = None
+    initial_draft_answer: Optional[str] = None
+    review_decision: Optional[ReviewDecision] = None
+    revision_count: int = 0
+    review_outcome: Optional[ReviewOutcome] = None
     execution_trace: Optional[ExecutionTrace] = None
 
     def to_dict(self) -> dict:

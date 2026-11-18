@@ -15,3 +15,11 @@ class AskRequest(BaseModel):
         default=None,
         description="Optional caller-supplied trace ID. A UUID is generated if omitted.",
     )
+    revision_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable the bounded review-and-revision loop. When true, a "
+            "reviewer's revise decision may trigger at most one revision "
+            "before the final review."
+        ),
+    )

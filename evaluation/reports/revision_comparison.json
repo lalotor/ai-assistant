@@ -1,0 +1,510 @@
+{
+  "questions": 11,
+  "runs": {
+    "baseline": 33,
+    "revision": 33
+  },
+  "answer_score": {
+    "baseline": 0.7257575757575757,
+    "revision": 0.8636363636363636,
+    "delta": 0.13787878787878793,
+    "improved": 4,
+    "unchanged": 5,
+    "degraded": 2,
+    "missing": 0
+  },
+  "retrieval_score": {
+    "baseline": 0.5252525252525252,
+    "revision": 0.5555555555555555,
+    "delta": 0.030303030303030276,
+    "improved": 1,
+    "unchanged": 10,
+    "degraded": 0,
+    "missing": 0
+  },
+  "latency_ms": {
+    "baseline": {
+      "avg": 8421.300272727272,
+      "p50": 4310.973,
+      "p95": 24382.632
+    },
+    "revision": {
+      "avg": 9000.377666666667,
+      "p50": 4397.603,
+      "p95": 22604.465
+    },
+    "delta_avg_ms": 579.0773939393948
+  },
+  "llm_calls": {
+    "baseline": {
+      "total": 99,
+      "avg_per_question": 3.0,
+      "avg_per_run": 3.0
+    },
+    "revision": {
+      "total": 107,
+      "avg_per_question": 3.242424242424242,
+      "avg_per_run": 3.242424242424242
+    },
+    "delta_avg_per_question": 0.2424242424242422
+  },
+  "tokens": {
+    "baseline": {
+      "total": 148161,
+      "avg_per_question": 4489.727272727273,
+      "avg_per_run": 4489.727272727273
+    },
+    "revision": {
+      "total": 161252,
+      "avg_per_question": 4886.424242424242,
+      "avg_per_run": 4886.424242424242
+    },
+    "delta_avg_per_question": 396.69696969696906
+  },
+  "review": {
+    "baseline": {
+      "revisions_attempted": 0,
+      "revision_count_total": 0,
+      "answers_changed": 33,
+      "outcomes": {
+        "abstained": 6,
+        "approved": 27
+      }
+    },
+    "revision": {
+      "revisions_attempted": 4,
+      "revision_count_total": 4,
+      "answers_changed": 33,
+      "outcomes": {
+        "abstained": 3,
+        "approved": 26,
+        "revised": 4
+      },
+      "questions_with_revision": 2
+    }
+  },
+  "per_question": [
+    {
+      "question": "Considering only your internal documentation, how many ingestion file source types do we have?",
+      "baseline": {
+        "runs": 3,
+        "score": 0.0,
+        "score_sources": 0.4444444444444444,
+        "duration_ms": 4298.058333333333,
+        "llm_calls": 3.0,
+        "tokens": 3893.0,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "abstained": 1,
+          "approved": 2
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 0.6666666666666666,
+        "score_sources": 0.7777777777777777,
+        "duration_ms": 6262.226,
+        "llm_calls": 4.333333333333333,
+        "tokens": 5280.0,
+        "revision_attempted_runs": 2,
+        "revision_count_avg": 0.6666666666666666,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 1,
+          "revised": 2
+        }
+      },
+      "score_delta": 0.6666666666666666,
+      "score_status": "improved",
+      "retrieval_delta": 0.33333333333333326,
+      "retrieval_status": "improved",
+      "latency_delta_ms": 1964.1676666666663,
+      "llm_calls_delta": 1.333333333333333,
+      "tokens_delta": 1387.0
+    },
+    {
+      "question": "Considering only your internal documentation, what inputs does DiffService take?",
+      "baseline": {
+        "runs": 3,
+        "score": 0.3333333333333333,
+        "score_sources": 1.0,
+        "duration_ms": 4266.537,
+        "llm_calls": 3.0,
+        "tokens": 3324.6666666666665,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "abstained": 2,
+          "approved": 1
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 1.0,
+        "duration_ms": 6961.416666666667,
+        "llm_calls": 4.333333333333333,
+        "tokens": 5539.666666666667,
+        "revision_attempted_runs": 2,
+        "revision_count_avg": 0.6666666666666666,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 1,
+          "revised": 2
+        }
+      },
+      "score_delta": 0.6666666666666667,
+      "score_status": "improved",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": 2694.8796666666667,
+      "llm_calls_delta": 1.333333333333333,
+      "tokens_delta": 2215.0000000000005
+    },
+    {
+      "question": "Considering only your internal documentation, what is the cache TTL config?",
+      "baseline": {
+        "runs": 3,
+        "score": 0.75,
+        "score_sources": 0.6666666666666666,
+        "duration_ms": 3807.976,
+        "llm_calls": 3.0,
+        "tokens": 2461.0,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 0.75,
+        "score_sources": 0.6666666666666666,
+        "duration_ms": 3903.6496666666667,
+        "llm_calls": 3.0,
+        "tokens": 2425.3333333333335,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "score_delta": 0.0,
+      "score_status": "unchanged",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": 95.67366666666658,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": -35.666666666666515
+    },
+    {
+      "question": "Considering only your internal documentation, how is the MongoDB being used?",
+      "baseline": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 1.0,
+        "duration_ms": 3911.4413333333337,
+        "llm_calls": 3.0,
+        "tokens": 2824.0,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "abstained": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 1.0,
+        "duration_ms": 4107.653333333333,
+        "llm_calls": 3.0,
+        "tokens": 2853.6666666666665,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "abstained": 3
+        }
+      },
+      "score_delta": 0.0,
+      "score_status": "unchanged",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": 196.21199999999908,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": 29.666666666666515
+    },
+    {
+      "question": "Considering only your internal documentation, what are the four specialized queue types used in the async processing architecture?",
+      "baseline": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 0.6666666666666666,
+        "duration_ms": 3879.927,
+        "llm_calls": 3.0,
+        "tokens": 4461.333333333333,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 0.6666666666666666,
+        "duration_ms": 3733.4230000000002,
+        "llm_calls": 3.0,
+        "tokens": 4450.333333333333,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "score_delta": 0.0,
+      "score_status": "unchanged",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": -146.5039999999999,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": -11.0
+    },
+    {
+      "question": "Considering only your internal documentation, what are the normalization stages applied before comparison in the comparison engine?",
+      "baseline": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 1.0,
+        "duration_ms": 3935.8063333333334,
+        "llm_calls": 3.0,
+        "tokens": 4576.0,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 1.0,
+        "duration_ms": 3445.314,
+        "llm_calls": 3.0,
+        "tokens": 4443.333333333333,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "score_delta": 0.0,
+      "score_status": "unchanged",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": -490.4923333333336,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": -132.66666666666697
+    },
+    {
+      "question": "What retry behavior is documented for failed queue processing?",
+      "baseline": {
+        "runs": 3,
+        "score": 0.8333333333333334,
+        "score_sources": 1.0,
+        "duration_ms": 4250.895333333334,
+        "llm_calls": 3.0,
+        "tokens": 4758.333333333333,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 0.75,
+        "score_sources": 1.0,
+        "duration_ms": 3799.8536666666664,
+        "llm_calls": 3.0,
+        "tokens": 4521.0,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "score_delta": -0.08333333333333337,
+      "score_status": "degraded",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": -451.0416666666674,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": -237.33333333333303
+    },
+    {
+      "question": "What are the pros and cons of using a queue-based asynchronous architecture versus synchronous REST for long-running file processing operations?",
+      "baseline": {
+        "runs": 3,
+        "score": 0.6,
+        "score_sources": 0.0,
+        "duration_ms": 12411.876666666665,
+        "llm_calls": 3.0,
+        "tokens": 5424.0,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 0.8000000000000002,
+        "score_sources": 0.0,
+        "duration_ms": 12574.269333333332,
+        "llm_calls": 3.0,
+        "tokens": 5148.0,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "score_delta": 0.20000000000000018,
+      "score_status": "improved",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": 162.39266666666663,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": -276.0
+    },
+    {
+      "question": "From a software architecture perspective, what are the benefits and trade-offs of using a polyglot architecture with Python for orchestration and Java for compute-intensive tasks?",
+      "baseline": {
+        "runs": 3,
+        "score": 0.9333333333333332,
+        "score_sources": 0.0,
+        "duration_ms": 13741.057333333336,
+        "llm_calls": 3.0,
+        "tokens": 5610.666666666667,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 0.8666666666666667,
+        "score_sources": 0.0,
+        "duration_ms": 17403.358666666667,
+        "llm_calls": 3.0,
+        "tokens": 6797.666666666667,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "score_delta": -0.06666666666666654,
+      "score_status": "degraded",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": 3662.301333333331,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": 1187.0
+    },
+    {
+      "question": "Explain this code: class ProcessingPipeline:\n    def __init__(self, job_id):\n        self.job_id = job_id\n        self.stages = []\n    def add_stage(self, name, handler):\n        self.stages.append({'name': name, 'handler': handler})\n    def execute(self, context):\n        result = context\n        for idx, stage in enumerate(self.stages):\n            result = stage['handler'](result)\n        return result",
+      "baseline": {
+        "runs": 3,
+        "score": 0.6,
+        "score_sources": 0.0,
+        "duration_ms": 20876.649,
+        "llm_calls": 3.0,
+        "tokens": 4674.333333333333,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 0.7333333333333334,
+        "score_sources": 0.0,
+        "duration_ms": 19877.774666666668,
+        "llm_calls": 3.0,
+        "tokens": 4536.666666666667,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "score_delta": 0.13333333333333341,
+      "score_status": "improved",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": -998.8743333333332,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": -137.66666666666606
+    },
+    {
+      "question": "Explain this code: def calculate_diff(source, target, path=''):\n    differences = []\n    if isinstance(source, dict):\n        all_keys = set(source.keys()) | set(target.keys())\n        for key in all_keys:\n            differences.extend(calculate_diff(source.get(key), target.get(key), f'{path}.{key}'))\n    elif source != target:\n        differences.append({'path': path, 'type': 'modified', 'old': source, 'new': target})\n    return differences",
+      "baseline": {
+        "runs": 3,
+        "score": 0.9333333333333332,
+        "score_sources": 0.0,
+        "duration_ms": 17254.078666666668,
+        "llm_calls": 3.0,
+        "tokens": 7379.666666666667,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 0.9333333333333332,
+        "score_sources": 0.0,
+        "duration_ms": 16935.215333333334,
+        "llm_calls": 3.0,
+        "tokens": 7755.0,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "score_delta": 0.0,
+      "score_status": "unchanged",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": -318.8633333333346,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": 375.33333333333303
+    }
+  ]
+}

@@ -1,0 +1,283 @@
+{
+  "questions": 5,
+  "runs": {
+    "baseline": 15,
+    "revision": 15
+  },
+  "answer_score": {
+    "baseline": 0.6763532763532764,
+    "revision": 0.9115384615384615,
+    "delta": 0.23518518518518516,
+    "improved": 3,
+    "unchanged": 2,
+    "degraded": 0,
+    "missing": 0
+  },
+  "retrieval_score": {
+    "baseline": 1.0,
+    "revision": 1.0,
+    "delta": 0.0,
+    "improved": 0,
+    "unchanged": 5,
+    "degraded": 0,
+    "missing": 0
+  },
+  "latency_ms": {
+    "baseline": {
+      "avg": 3900.1830666666665,
+      "p50": 3850.825,
+      "p95": 4444.3330000000005
+    },
+    "revision": {
+      "avg": 5199.8382,
+      "p50": 4176.256,
+      "p95": 10067.309
+    },
+    "delta_avg_ms": 1299.6551333333337
+  },
+  "llm_calls": {
+    "baseline": {
+      "total": 45,
+      "avg_per_question": 3.0,
+      "avg_per_run": 3.0
+    },
+    "revision": {
+      "total": 55,
+      "avg_per_question": 3.6666666666666665,
+      "avg_per_run": 3.6666666666666665
+    },
+    "delta_avg_per_question": 0.6666666666666665
+  },
+  "tokens": {
+    "baseline": {
+      "total": 67887,
+      "avg_per_question": 4525.8,
+      "avg_per_run": 4525.8
+    },
+    "revision": {
+      "total": 89212,
+      "avg_per_question": 5947.466666666666,
+      "avg_per_run": 5947.466666666666
+    },
+    "delta_avg_per_question": 1421.666666666666
+  },
+  "review": {
+    "baseline": {
+      "revisions_attempted": 0,
+      "revision_count_total": 0,
+      "answers_changed": 15,
+      "outcomes": {
+        "abstained": 4,
+        "approved": 11
+      }
+    },
+    "revision": {
+      "revisions_attempted": 5,
+      "revision_count_total": 5,
+      "answers_changed": 15,
+      "outcomes": {
+        "abstained": 1,
+        "approved": 10,
+        "revised": 4
+      },
+      "questions_with_revision": 3
+    }
+  },
+  "per_question": [
+    {
+      "question": "Considering only your internal documentation, what inputs does DiffService take?",
+      "baseline": {
+        "runs": 3,
+        "score": 0.6666666666666666,
+        "score_sources": 1.0,
+        "duration_ms": 3824.367333333333,
+        "llm_calls": 3.0,
+        "tokens": 2886.3333333333335,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "abstained": 1,
+          "approved": 2
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 1.0,
+        "duration_ms": 6454.916,
+        "llm_calls": 4.333333333333333,
+        "tokens": 5274.666666666667,
+        "revision_attempted_runs": 2,
+        "revision_count_avg": 0.6666666666666666,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 1,
+          "revised": 2
+        }
+      },
+      "score_delta": 0.33333333333333337,
+      "score_status": "improved",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": 2630.548666666667,
+      "llm_calls_delta": 1.333333333333333,
+      "tokens_delta": 2388.3333333333335
+    },
+    {
+      "question": "Considering only your internal documentation, enumerate the common and status-specific fields returned by get_status for processing, completed, and failed jobs, and include its not-found response.",
+      "baseline": {
+        "runs": 3,
+        "score": 0.9743589743589745,
+        "score_sources": 1.0,
+        "duration_ms": 3988.7530000000006,
+        "llm_calls": 3.0,
+        "tokens": 5248.0,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 0.9743589743589745,
+        "score_sources": 1.0,
+        "duration_ms": 5302.030333333334,
+        "llm_calls": 3.6666666666666665,
+        "tokens": 7351.0,
+        "revision_attempted_runs": 1,
+        "revision_count_avg": 0.3333333333333333,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 2,
+          "revised": 1
+        }
+      },
+      "score_delta": 0.0,
+      "score_status": "unchanged",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": 1313.2773333333334,
+      "llm_calls_delta": 0.6666666666666665,
+      "tokens_delta": 2103.0
+    },
+    {
+      "question": "Considering only your internal documentation, enumerate the file-storage lifecycle tiers with their storage class and age range, and include the documented expiration and database archival policies.",
+      "baseline": {
+        "runs": 3,
+        "score": 0.0,
+        "score_sources": 1.0,
+        "duration_ms": 4100.606333333333,
+        "llm_calls": 3.0,
+        "tokens": 3825.3333333333335,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "abstained": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 0.5833333333333334,
+        "score_sources": 1.0,
+        "duration_ms": 6584.818666666666,
+        "llm_calls": 4.333333333333333,
+        "tokens": 6601.666666666667,
+        "revision_attempted_runs": 2,
+        "revision_count_avg": 0.6666666666666666,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "abstained": 1,
+          "approved": 1,
+          "revised": 1
+        }
+      },
+      "score_delta": 0.5833333333333334,
+      "score_status": "improved",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": 2484.212333333333,
+      "llm_calls_delta": 1.333333333333333,
+      "tokens_delta": 2776.3333333333335
+    },
+    {
+      "question": "Considering only your internal documentation, what context key does normalize_stage read, which context keys does it write, and how does it distinguish string content from an already-parsed value? Include the normalization_applied value.",
+      "baseline": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 1.0,
+        "duration_ms": 3543.619,
+        "llm_calls": 3.0,
+        "tokens": 4517.0,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 1.0,
+        "duration_ms": 3831.458,
+        "llm_calls": 3.0,
+        "tokens": 4402.333333333333,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "score_delta": 0.0,
+      "score_status": "unchanged",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": 287.83899999999994,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": -114.66666666666697
+    },
+    {
+      "question": "Considering only your internal documentation, trace the asynchronous processing flow from POST /process through the four specialized queues to the client's status lookup. Name each queue in order and state the main worker action before the next handoff.",
+      "baseline": {
+        "runs": 3,
+        "score": 0.7407407407407408,
+        "score_sources": 1.0,
+        "duration_ms": 4043.5696666666668,
+        "llm_calls": 3.0,
+        "tokens": 6152.333333333333,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "revision": {
+        "runs": 3,
+        "score": 1.0,
+        "score_sources": 1.0,
+        "duration_ms": 3825.9680000000003,
+        "llm_calls": 3.0,
+        "tokens": 6107.666666666667,
+        "revision_attempted_runs": 0,
+        "revision_count_avg": 0.0,
+        "answers_changed": 3,
+        "review_outcomes": {
+          "approved": 3
+        }
+      },
+      "score_delta": 0.2592592592592592,
+      "score_status": "improved",
+      "retrieval_delta": 0.0,
+      "retrieval_status": "unchanged",
+      "latency_delta_ms": -217.60166666666646,
+      "llm_calls_delta": 0.0,
+      "tokens_delta": -44.66666666666606
+    }
+  ]
+}

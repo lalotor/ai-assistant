@@ -16,9 +16,10 @@ router = APIRouter(tags=["ask"])
     status_code=status.HTTP_200_OK,
     summary="Ask the AI assistant a question",
     description=(
-        "Runs the question through the full multi-agent graph "
+        "Runs the question through the multi-agent graph "
         "(Planner → Worker → Reviewer) and returns the final answer "
-        "together with an execution trace."
+        "together with an execution trace. Set revision_enabled to allow "
+        "one bounded revision when the Reviewer requests changes."
     ),
 )
 async def ask(body: AskRequest, request: Request) -> AskResponse:
@@ -29,7 +30,8 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
     concurrent requests.
 
     Args:
-        body: Validated request payload (question + optional trace_id).
+        body: Validated request payload (question, optional trace_id, and
+            optional revision_enabled flag).
         request: FastAPI request object used to access ``app.state.runtime``.
 
     Returns:
@@ -53,6 +55,7 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
             runtime.run_question,
             body.question,
             body.trace_id,
+            revision_enabled=body.revision_enabled,
         )
     except Exception as exc:
         logger.error(
@@ -76,4 +79,7 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
         trace_id=trace_id,
         answer=response.final_answer,
         sources=response.retrieved_sources,
+        review_decision=response.review_decision,
+        revision_count=response.revision_count,
+        review_outcome=response.review_outcome,
     )

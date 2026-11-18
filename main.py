@@ -22,6 +22,15 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Output the result as JSON to stdout"
     )
+    parser.add_argument(
+        "--revision",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable the bounded review-and-revision loop (at most one "
+            "revision when the reviewer requests it)"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -74,7 +83,10 @@ def main():
         logger.warning("empty_input_provided", message="No question provided. Exiting.")
         return
 
-    response = runtime.run_question(user_question)
+    response = runtime.run_question(
+        user_question,
+        revision_enabled=args.revision,
+    )
 
     if args.json:
         print(json.dumps(response.to_dict()))
