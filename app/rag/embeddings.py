@@ -1,11 +1,45 @@
 import os
+
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
-def get_embeddings():
-    """Factory function to get the appropriate embeddings class based on environment variable."""
+
+DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+DEFAULT_GEMINI_EMBEDDING_MODEL = "gemini-embedding-2-preview"
+
+
+def get_embedding_config() -> dict[str, str]:
+    """Return the provider and model that define the vector representation."""
     provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
 
     if provider == "openai":
-        return OpenAIEmbeddings(model="text-embedding-3-small")
+        return {
+            "provider": provider,
+            "model": DEFAULT_OPENAI_EMBEDDING_MODEL,
+        }
+    if provider == "gemini":
+        return {
+            "provider": provider,
+            "model": os.getenv("GEMINI_EMBEDDING_MODEL")
+            or DEFAULT_GEMINI_EMBEDDING_MODEL,
+        }
 
     raise ValueError(f"Unsupported embedding provider: {provider}")
+
+
+def get_embeddings():
+    """Create the configured embedding model."""
+    config = get_embedding_config()
+    if config["provider"] == "openai":
+        return OpenAIEmbeddings(model=config["model"])
+    if config["provider"] == "gemini":
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is required when EMBEDDING_PROVIDER=gemini."
+            )
+        return GoogleGenerativeAIEmbeddings(
+            model=config["model"],
+            google_api_key=api_key,
+        )
+    raise ValueError(f"Unsupported embedding provider: {config['provider']}")

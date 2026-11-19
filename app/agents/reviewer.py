@@ -6,7 +6,7 @@ import structlog
 from app.agents.stage import record_stage_metrics
 from app.contracts.agent import AgentState, ReviewResult
 from app.prompts import format_prompt
-from app.utils.llm import get_llm, extract_usage
+from app.utils.llm import get_llm, extract_model_usage
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -88,7 +88,7 @@ def reviewer_node(state: AgentState) -> AgentState:
     llm_with_structure = llm.with_structured_output(ReviewResult, include_raw=True)
     outcome = llm_with_structure.invoke(review_prompt)
     response = outcome["parsed"]
-    token_usage = extract_usage(outcome["raw"], model_name=llm.model_name)
+    token_usage = extract_model_usage(outcome["raw"], model=llm)
 
     decision = response.decision
     feedback = (response.feedback or "").strip()

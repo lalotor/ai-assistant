@@ -11,7 +11,10 @@ From the repository root, install dependencies and configure the provider key:
 ```bash
 uv sync
 cp .env.sample .env
-# Set OPENAI_API_KEY in .env
+# Set OPENAI_API_KEY in .env, or choose Gemini for both providers:
+# LLM_PROVIDER=gemini
+# EMBEDDING_PROVIDER=gemini
+# GEMINI_API_KEY=your-key
 ```
 
 Start the API on loopback only:

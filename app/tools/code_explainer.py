@@ -1,7 +1,7 @@
 import structlog
 from app.contracts.tools import CodeInput, CodeOutput
 from app.prompts import format_prompt
-from app.utils.llm import get_llm, extract_usage
+from app.utils.llm import get_llm, extract_model_usage
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -23,6 +23,6 @@ def code_explainer(code_input: CodeInput) -> CodeOutput:
     )
 
     response = llm.invoke(code_explanation_prompt)
-    token_usage = extract_usage(response, model_name=llm.model_name)
+    token_usage = extract_model_usage(response, model=llm)
 
     return CodeOutput(explanation=response.content, token_usage=token_usage)

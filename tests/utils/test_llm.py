@@ -15,13 +15,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import httpx
 import openai
 import pytest
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from app.utils.llm import (
     LLM_MAX_RETRIES,
     LLM_REQUEST_TIMEOUT_SECONDS,
     extract_usage,
+    extract_model_usage,
     get_llm,
+    get_model_name,
 )
 
 
@@ -63,7 +66,9 @@ def _test_chat_model(http_client: httpx.Client, *, max_retries: int = 2, timeout
 
 @pytest.mark.unit
 class TestGetLlmReliabilityConfiguration:
-    def test_configures_bounded_retries_and_request_timeout(self, mocker):
+    def test_configures_bounded_retries_and_request_timeout(self, mocker, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
+        monkeypatch.delenv("LLM_MODEL", raising=False)
         chat_openai = mocker.patch("app.utils.llm.ChatOpenAI")
 
         result = get_llm()
@@ -76,7 +81,8 @@ class TestGetLlmReliabilityConfiguration:
         )
         assert result is chat_openai.return_value
 
-    def test_preserves_requested_model_and_temperature(self, mocker):
+    def test_preserves_requested_model_and_temperature(self, mocker, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
         chat_openai = mocker.patch("app.utils.llm.ChatOpenAI")
 
         get_llm(model="another-model", temperature=0.4)
@@ -87,6 +93,70 @@ class TestGetLlmReliabilityConfiguration:
             max_retries=LLM_MAX_RETRIES,
             request_timeout=LLM_REQUEST_TIMEOUT_SECONDS,
         )
+
+    def test_creates_gemini_model_with_configured_key_and_model(self, mocker, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "gemini")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.setenv("LLM_MODEL", "gemini-test-model")
+        chat_gemini = mocker.patch("app.utils.llm.ChatGoogleGenerativeAI")
+
+        result = get_llm(temperature=0.2)
+
+        chat_gemini.assert_called_once_with(
+            model="gemini-test-model",
+            temperature=0.2,
+            api_key="test-gemini-key",
+            max_retries=LLM_MAX_RETRIES,
+            timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+        )
+        assert result is chat_gemini.return_value
+
+    def test_leaves_gemini_temperature_at_the_model_default_when_unspecified(
+        self, mocker, monkeypatch
+    ):
+        monkeypatch.setenv("LLM_PROVIDER", "gemini")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        chat_gemini = mocker.patch("app.utils.llm.ChatGoogleGenerativeAI")
+
+        get_llm()
+
+        chat_gemini.assert_called_once_with(
+            model="gemini-3.5-flash-lite",
+            api_key="test-gemini-key",
+            max_retries=LLM_MAX_RETRIES,
+            timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+        )
+
+    def test_gemini_model_requires_its_api_key(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "gemini")
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+        with pytest.raises(RuntimeError, match="GEMINI_API_KEY is required"):
+            get_llm()
+
+    def test_unknown_chat_provider_is_rejected(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "unsupported")
+
+        with pytest.raises(ValueError, match="Unsupported LLM_PROVIDER"):
+            get_llm()
+
+    def test_get_model_name_uses_gemini_model_field(self):
+        model = ChatGoogleGenerativeAI(model="gemini-test-model", api_key="test-key")
+
+        assert get_model_name(model) == "gemini-test-model"
+
+    def test_extracts_gemini_usage_with_its_model_identifier(self):
+        model = ChatGoogleGenerativeAI(model="gemini-test-model", api_key="test-key")
+        message = FakeAIMessage(
+            usage_metadata={"input_tokens": 12, "output_tokens": 8, "total_tokens": 20}
+        )
+
+        assert extract_model_usage(message, model) == {
+            "input_tokens": 12,
+            "output_tokens": 8,
+            "model": "gemini-test-model",
+        }
 
 
 @pytest.mark.unit

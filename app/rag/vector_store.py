@@ -1,10 +1,11 @@
+import json
 import os
 import structlog
 from pathlib import Path
 from typing import Optional
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
-from app.rag.embeddings import get_embeddings
+from app.rag.embeddings import get_embedding_config, get_embeddings
 from app.rag.ingestion import load_documents
 from app.rag.chunking import get_all_chunks
 
@@ -23,6 +24,11 @@ _cached_chunks: Optional[list[Document]] = None
 # regardless of the working directory the server is launched from.
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_VECTOR_STORE_PATH = _PROJECT_ROOT / "data" / "vector_store"
+_EMBEDDING_CONFIG_FILENAME = "embedding_config.json"
+_LEGACY_OPENAI_EMBEDDING_CONFIG = {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+}
 
 # Allow override via env var; if relative, resolve against project root.
 _raw_path = os.getenv("VECTOR_STORE_PATH")
@@ -56,31 +62,58 @@ def initialize_vector_store(force_rebuild: bool = False) -> FAISS:
     Returns:
         FAISS: The initialized vector store
     """
-    embeddings = get_embeddings()
     vector_store_path = Path(VECTOR_STORE_PATH)
+    embedding_config = get_embedding_config()
 
     # Check if persisted vector store exists
     if vector_store_path.exists() and not force_rebuild:
-        logger.info(
-            "loading_persisted_vector_store",
-            path=str(vector_store_path)
-        )
+        config_path = vector_store_path / _EMBEDDING_CONFIG_FILENAME
         try:
-            vector_store = FAISS.load_local(
-                str(vector_store_path),
-                embeddings,
-                allow_dangerous_deserialization=True  # Required for FAISS
+            stored_embedding_config = json.loads(config_path.read_text())
+        except FileNotFoundError:
+            stored_embedding_config = (
+                _LEGACY_OPENAI_EMBEDDING_CONFIG
+                if embedding_config == _LEGACY_OPENAI_EMBEDDING_CONFIG
+                else None
             )
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning(
+                "failed_to_read_vector_store_embedding_config",
+                error_type=type(e).__name__,
+            )
+            stored_embedding_config = None
+
+        if stored_embedding_config == embedding_config:
             logger.info(
-                "vector_store_loaded_successfully",
+                "loading_persisted_vector_store",
                 path=str(vector_store_path)
             )
-            return vector_store
-        except Exception as e:
-            logger.warning(
-                "failed_to_load_persisted_vector_store",
-                error=str(e),
-                action="rebuilding_from_scratch"
+            try:
+                vector_store = FAISS.load_local(
+                    str(vector_store_path),
+                    get_embeddings(),
+                    allow_dangerous_deserialization=True  # Required for FAISS
+                )
+                if not config_path.exists():
+                    _save_embedding_config(vector_store_path, embedding_config)
+                logger.info(
+                    "vector_store_loaded_successfully",
+                    path=str(vector_store_path)
+                )
+                return vector_store
+            except Exception as e:
+                logger.warning(
+                    "failed_to_load_persisted_vector_store",
+                    error_type=type(e).__name__,
+                    action="rebuilding_from_scratch"
+                )
+        else:
+            logger.info(
+                "persisted_vector_store_embedding_mismatch",
+                stored_provider=(stored_embedding_config or {}).get("provider"),
+                configured_provider=embedding_config["provider"],
+                configured_model=embedding_config["model"],
+                action="rebuilding_from_scratch",
             )
 
     # Build vector store from scratch
@@ -159,6 +192,7 @@ def save_vector_store(vector_store: FAISS) -> None:
 
     try:
         vector_store.save_local(str(vector_store_path))
+        _save_embedding_config(vector_store_path, get_embedding_config())
         logger.info(
             "vector_store_saved_successfully",
             path=str(vector_store_path)
@@ -166,9 +200,20 @@ def save_vector_store(vector_store: FAISS) -> None:
     except Exception as e:
         logger.error(
             "failed_to_save_vector_store",
-            error=str(e),
+            error_type=type(e).__name__,
             path=str(vector_store_path)
         )
+        raise
+
+def _save_embedding_config(
+    vector_store_path: Path,
+    embedding_config: dict[str, str],
+) -> None:
+    vector_store_path.mkdir(parents=True, exist_ok=True)
+    (vector_store_path / _EMBEDDING_CONFIG_FILENAME).write_text(
+        json.dumps(embedding_config, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 def add_documents_to_vector_store(new_chunks: list) -> None:
     """

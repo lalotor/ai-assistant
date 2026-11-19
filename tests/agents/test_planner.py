@@ -3,9 +3,9 @@
 get_tool_decision(question: str) -> ToolDecision is the seam under test.
 Most tests mock the LLM boundary (app.agents.planner.llm) so they run
 without network access or API cost. The `requires_api` class exercises
-the real OpenAI-backed planner and is skipped unless OPENAI_API_KEY is
-set, since it is a probabilistic regression test (see below) rather
-than a deterministic unit test.
+the real configured planner and is skipped unless its provider key is set,
+since it is a probabilistic regression test (see below) rather than a
+deterministic unit test.
 """
 import os
 from collections import Counter
@@ -15,6 +15,15 @@ from structlog.testing import capture_logs
 
 from app.agents.planner import get_tool_decision, planner_node
 from app.contracts.agent import AgentState
+
+
+def _selected_provider_key_is_set() -> bool:
+    provider = os.getenv("LLM_PROVIDER", "openai").lower()
+    key_name = {
+        "openai": "OPENAI_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+    }.get(provider)
+    return bool(key_name and os.getenv(key_name))
 
 
 def make_structured_llm(mocker, tool="doc_retriever", reason="looked up docs", tool_input=None, usage_metadata=None):
@@ -112,7 +121,10 @@ class TestPlannerNodeLlmUsage:
 
 
 @pytest.mark.requires_api
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="requires OPENAI_API_KEY")
+@pytest.mark.skipif(
+    not _selected_provider_key_is_set(),
+    reason="requires an API key for the selected LLM_PROVIDER",
+)
 class TestPlannerNamedServiceRouting:
     """Regression test for an intermittent planner misrouting bug.
 

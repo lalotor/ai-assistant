@@ -4,7 +4,9 @@
 
 The project is a local, single-turn AI assistant with a Planner → Worker →
 Reviewer LangGraph workflow, optional bounded revision, hybrid documentation
-retrieval, evaluation tooling, and structured execution traces.
+retrieval, evaluation tooling, and structured execution traces. OpenAI remains
+the default model and embedding provider; Gemini can be selected independently
+for either role.
 
 The FastAPI application initializes one `AssistantRuntime` at startup and
 exposes:
@@ -29,10 +31,11 @@ The runnable local demonstration is in the [demo walkthrough](./demo-walkthrough
 
 | Validation | Result |
 |---|---|
-| `uv run pytest -q` | **245 passed, 1 skipped** (246 collected). |
-| Overall coverage | 93% reported by the configured pytest coverage run. |
+| `uv run pytest -q` | **264 passed, 1 skipped** (265 collected). |
+| Overall coverage | 94% reported by the configured pytest coverage run. |
 | FastAPI startup command help | Confirmed `fastapi dev` accepts `--host` and defaults to `127.0.0.1`. |
 | Mocked API/runtime integration | Verified a grounded retrieval-fallback answer through `/ask` and `/trace/{trace_id}`; verified a reviewer-timeout error returns `X-Trace-ID` and leaves a retrievable failed-stage trace. |
+| Gemini integration construction | Constructed Gemini chat and embedding integrations, and both Planner/Reviewer structured-output runnables, with placeholder keys and no network call. |
 | Live API startup / live provider evaluation | Not run. This report does not claim that external model calls or a real service startup passed. |
 
 Pytest emitted four warnings, including the existing coverage warning that
@@ -47,6 +50,12 @@ the project manifest. The editor problem check reports the existing
 No new Week 12 live evaluation or performance run was made, so there is no
 Week 12 quality, latency, or token-cost measurement to compare against prior
 weeks.
+
+Gemini is now an optional provider for chat and embeddings; OpenAI remains the
+default. Automated tests verify provider selection, conditional key validation,
+provider-neutral model usage metadata, and FAISS rebuild behavior when the
+embedding model changes. The user's Gemini key was not read or tested, so a
+live provider request remains to be verified locally.
 
 The latest existing comparison is the [Week 11 revision report](../../evaluation/reports/revision_comparison.md):
 three full runs per mode over 11 questions (33 baseline and 33 revision

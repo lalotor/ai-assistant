@@ -5,10 +5,23 @@ Requires Python 3.13.5 or newer and [uv](https://docs.astral.sh/uv/).
 ```bash
 uv sync
 cp .env.sample .env
-# Set OPENAI_API_KEY in .env
+# The default chat and embedding providers are OpenAI.
+# Set OPENAI_API_KEY in .env, or choose Gemini for both providers:
+# LLM_PROVIDER=gemini
+# EMBEDDING_PROVIDER=gemini
+# GEMINI_API_KEY=your-key
 ```
 
 The first run initializes the local vector store and may take 1-2 minutes.
+OpenAI remains the default chat and embedding provider. To use Gemini without
+an OpenAI key, set both `LLM_PROVIDER=gemini` and `EMBEDDING_PROVIDER=gemini`,
+then set `GEMINI_API_KEY`. `LLM_MODEL` and `GEMINI_EMBEDDING_MODEL` can override
+the provider defaults. Changing the embedding provider or model automatically
+rebuilds the local FAISS index; the rebuild re-embeds the document corpus and
+may incur provider usage. The Gemini chat default follows the model's
+temperature default; OpenAI retains the existing temperature of `0`.
+See [ADR 0004](./docs/adr/0004-selectable-gemini-model-provider.md) for the
+provider and embedding-index compatibility decision.
 
 ## FastAPI
 
