@@ -34,9 +34,30 @@ class EnvironmentValidator:
     ENV_VARS = [
         EnvVarConfig(
             name="OPENAI_API_KEY",
-            required=True,
-            description="OpenAI API key for LLM operations",
-            validator=lambda x: len(x) > 20 and x.startswith("sk-")
+            required=False,
+            description="OpenAI API key for chat and/or embedding operations",
+        ),
+        EnvVarConfig(
+            name="GEMINI_API_KEY",
+            required=False,
+            description="Gemini API key for chat and/or embedding operations",
+        ),
+        EnvVarConfig(
+            name="GROQ_API_KEY",
+            required=False,
+            description="Groq API key for chat operations",
+        ),
+        EnvVarConfig(
+            name="LLM_PROVIDER",
+            required=False,
+            default="openai",
+            description="Chat model provider",
+            allowed_values=["openai", "gemini", "groq"]
+        ),
+        EnvVarConfig(
+            name="LLM_MODEL",
+            required=False,
+            description="Optional chat model name override",
         ),
         EnvVarConfig(
             name="LOG_LEVEL",
@@ -70,7 +91,19 @@ class EnvironmentValidator:
             required=False,
             default="openai",
             description="Provider for embedding generation",
-            allowed_values=["openai"]
+            allowed_values=["openai", "gemini", "local"]
+        ),
+        EnvVarConfig(
+            name="LOCAL_EMBEDDING_MODEL",
+            required=False,
+            default="sentence-transformers/all-MiniLM-L6-v2",
+            description="Local Hugging Face sentence-transformer model",
+        ),
+        EnvVarConfig(
+            name="GEMINI_EMBEDDING_MODEL",
+            required=False,
+            default="gemini-embedding-2-preview",
+            description="Gemini embedding model name",
         ),
         EnvVarConfig(
             name="VECTOR_STORE_PATH",
@@ -129,7 +162,47 @@ class EnvironmentValidator:
                     self.validation_errors.append(str(e))
                 else:
                     self.validation_warnings.append(str(e))
-        
+
+        selected_providers = {
+            validated_vars.get("LLM_PROVIDER", "openai"),
+            validated_vars.get("EMBEDDING_PROVIDER", "openai"),
+        }
+        provider_keys = {
+            "openai": (
+                "OPENAI_API_KEY",
+                "OPENAI_API_KEY is required when either selected provider is openai.",
+            ),
+            "gemini": (
+                "GEMINI_API_KEY",
+                "GEMINI_API_KEY is required when either selected provider is gemini.",
+            ),
+            "groq": (
+                "GROQ_API_KEY",
+                "GROQ_API_KEY is required when LLM_PROVIDER=groq.",
+            ),
+        }
+        for provider in selected_providers:
+            if provider not in provider_keys:
+                continue
+            key_name, error_message = provider_keys[provider]
+            key_value = os.getenv(key_name, "").strip()
+            if not key_value:
+                if self.strict_mode:
+                    self.validation_errors.append(error_message)
+                else:
+                    self.validation_warnings.append(error_message)
+            elif provider == "openai" and (
+                len(key_value) <= 20 or not key_value.startswith("sk-")
+            ):
+                invalid_key_message = (
+                    "OPENAI_API_KEY must start with 'sk-' and be longer than 20 "
+                    "characters when an OpenAI provider is selected."
+                )
+                if self.strict_mode:
+                    self.validation_errors.append(invalid_key_message)
+                else:
+                    self.validation_warnings.append(invalid_key_message)
+
         # Report results
         if self.validation_errors:
             error_msg = "Environment validation failed:\n" + "\n".join(

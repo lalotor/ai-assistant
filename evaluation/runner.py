@@ -22,33 +22,33 @@ from dotenv import load_dotenv
 
 from app.contracts.response import QueryResponse
 
-# Load environment variables FIRST before any validation
-# This ensures .env file values (like OPENAI_API_KEY) are available
-load_dotenv()
-
-from app.config.logging_config import configure_logging
-from app.config.env_validator import validate_environment
-
-validated_env = validate_environment(verbose=True)
-
-configure_logging(
-    log_level=validated_env.get("LOG_LEVEL", "INFO"),
-    json_logs=validated_env.get("JSON_LOGS", "false").lower() == "true",
-    enable_file_logging=validated_env.get("ENABLE_FILE_LOGGING", "false").lower() == "true",
-    log_file_path=validated_env.get("LOG_FILE_PATH", "logs/app.log")
-)
-
 logger = structlog.get_logger(__name__)
 
 # Project root (one level up from evaluation/)
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAIN_SCRIPT = os.path.join(ROOT_DIR, "main.py")
 
-slow_execution_threshold = int(validated_env.get("SLOW_EXECUTION_THRESHOLD", 10000))
 
-# Per-question timeout in seconds. If a question takes longer, it is marked as
-# a timeout error and the runner moves on to the next question.
-question_timeout = int(validated_env.get("QUESTION_TIMEOUT", 60))
+def _question_timeout() -> int:
+    return int(os.getenv("QUESTION_TIMEOUT", "60"))
+
+
+def _slow_execution_threshold() -> int:
+    return int(os.getenv("SLOW_EXECUTION_THRESHOLD", "10000"))
+
+
+def _configure_logging() -> None:
+    load_dotenv()
+    from app.config.env_validator import validate_environment
+    from app.config.logging_config import configure_logging
+
+    validated_env = validate_environment(verbose=True)
+    configure_logging(
+        log_level=validated_env.get("LOG_LEVEL", "INFO"),
+        json_logs=validated_env.get("JSON_LOGS", "false").lower() == "true",
+        enable_file_logging=validated_env.get("ENABLE_FILE_LOGGING", "false").lower() == "true",
+        log_file_path=validated_env.get("LOG_FILE_PATH", "logs/app.log"),
+    )
 
 def ask_assistant(
     question: str,
@@ -72,7 +72,7 @@ def ask_assistant(
         RuntimeError: If the subprocess exits with a non-zero code.
         json.JSONDecodeError: If the output is not valid JSON.
     """
-    effective_timeout = timeout if timeout is not None else question_timeout
+    effective_timeout = timeout if timeout is not None else _question_timeout()
     command = [sys.executable, MAIN_SCRIPT, "--question", question, "--json"]
     if revision_enabled:
         command.append("--revision")
@@ -145,6 +145,7 @@ def score_keywords(
 def run_evaluation(
     dataset_path: str | None = None,
     revision_enabled: bool = False,
+    results_file: str | None = None,
 ) -> list[dict[str, Any]]:
     """Run the evaluation suite against the retrieval pipeline.
 
@@ -157,6 +158,8 @@ def run_evaluation(
                       Defaults to evaluation/datasets/retrieval_eval_smoke.json.
         revision_enabled: Run the same dataset through the graph with the
                       bounded revision path enabled.
+        results_file: Optional destination for progressive results. Defaults
+                      to a timestamped file in evaluation/results.
 
     Returns:
         List of result dicts, one per evaluation item.
@@ -171,17 +174,23 @@ def run_evaluation(
 
     results: list[dict[str, Any]] = []
 
-    # Create the results file path once, reused for every progressive save
-    results_dir = os.path.join(ROOT_DIR, "evaluation", "results")
-    os.makedirs(results_dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     mode = "revision" if revision_enabled else "single_pass"
-    results_file = os.path.join(results_dir, f"eval_{mode}_{timestamp}.json")
+    if results_file is None:
+        results_dir = os.path.join(ROOT_DIR, "evaluation", "results")
+        os.makedirs(results_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        results_file = os.path.join(results_dir, f"eval_{mode}_{timestamp}.json")
+    else:
+        results_file = os.path.abspath(results_file)
+        results_dir = os.path.dirname(results_file)
+        if results_dir:
+            os.makedirs(results_dir, exist_ok=True)
+    timeout_per_question = _question_timeout()
 
     logger.info(
         "run_evaluation_started",
         questions=len(eval_set),
-        timeout_per_question=question_timeout,
+        timeout_per_question=timeout_per_question,
         revision_enabled=revision_enabled,
         results_file=results_file,
     )
@@ -195,7 +204,11 @@ def run_evaluation(
         )
 
         try:
-            response = ask_assistant(question, revision_enabled=revision_enabled)
+            response = ask_assistant(
+                question,
+                timeout=timeout_per_question,
+                revision_enabled=revision_enabled,
+            )
             retrieved_sources = response.retrieved_sources
 
             # Keyword matching
@@ -359,6 +372,7 @@ def run_evaluation(
                 "question": question,
                 "answer": None,
                 "error": str(exc),
+                "error_type": "TimeoutError",
                 "score": 0.0,
                 "score_sources": 0.0,
                 "status": "timeout",
@@ -367,7 +381,7 @@ def run_evaluation(
             logger.error(
                 "evaluation_timeout",
                 question_length=len(question),
-                timeout_seconds=question_timeout,
+                timeout_seconds=timeout_per_question,
             )
 
         except Exception as exc:
@@ -375,6 +389,7 @@ def run_evaluation(
                 "question": question,
                 "answer": None,
                 "error": str(exc),
+                "error_type": type(exc).__name__,
                 "score": 0.0,
                 "score_sources": 0.0,
                 "status": "error",
@@ -409,7 +424,7 @@ def classify_failure(item: dict, response: QueryResponse, score: float, score_so
         return None  # Not a failure
 
     duration_ms = response.execution_trace.duration_ms
-    if duration_ms is not None and duration_ms > slow_execution_threshold:
+    if duration_ms is not None and duration_ms > _slow_execution_threshold():
         return "slow_execution"
 
     category = item.get("category", "")
@@ -500,6 +515,7 @@ def _save_progress(
     )
 
 def main() -> None:
+    _configure_logging()
     parser = argparse.ArgumentParser(description="Run the assistant evaluation suite.")
     parser.add_argument(
         "--dataset",

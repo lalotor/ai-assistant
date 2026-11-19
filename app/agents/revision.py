@@ -5,7 +5,7 @@ import structlog
 from app.agents.stage import record_stage_metrics
 from app.contracts.agent import AgentState
 from app.prompts import format_prompt
-from app.utils.llm import get_llm, extract_usage
+from app.utils.llm import get_llm, extract_model_usage
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -47,7 +47,7 @@ def revision_node(state: AgentState) -> AgentState:
     if not revised_answer:
         raise ValueError("Revision produced an empty answer.")
 
-    token_usage = extract_usage(response, model_name=llm.model_name)
+    token_usage = extract_model_usage(response, model=llm)
 
     if state.initial_draft_answer is None:
         state.initial_draft_answer = state.draft_answer

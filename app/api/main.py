@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 
-from app.api.routes import ask, health
+from app.api.routes import ask, evaluate, health, trace
 from app.runtime.assistant_runtime import AssistantRuntime
 
 logger = structlog.get_logger(__name__)
@@ -39,3 +39,5 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(ask.router)
+app.include_router(evaluate.router)
+app.include_router(trace.router)

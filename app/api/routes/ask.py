@@ -1,4 +1,6 @@
 import asyncio
+import uuid
+
 import structlog
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -41,11 +43,12 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
         HTTPException 500: If the agent graph raises an unexpected error.
     """
     runtime = request.app.state.runtime
+    trace_id = body.trace_id or str(uuid.uuid4())
 
     logger.info(
         "ask_request_received",
         question_length=len(body.question),
-        trace_id=body.trace_id,
+        trace_id=trace_id,
     )
 
     try:
@@ -54,13 +57,13 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
         response = await asyncio.to_thread(
             runtime.run_question,
             body.question,
-            body.trace_id,
+            trace_id,
             revision_enabled=body.revision_enabled,
         )
     except Exception as exc:
         logger.error(
             "ask_request_failed",
-            trace_id=body.trace_id,
+            trace_id=trace_id,
             outcome="failed",
             failure_category="request_execution_error",
             error_type=type(exc).__name__,
@@ -68,15 +71,16 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="The agent encountered an error processing your question.",
+            headers={"X-Trace-ID": trace_id},
         ) from exc
 
     trace = response.execution_trace
-    trace_id = trace.trace_id if trace else (body.trace_id or "unknown")
+    response_trace_id = trace.trace_id if trace else trace_id
 
-    logger.info("ask_request_completed", trace_id=trace_id)
+    logger.info("ask_request_completed", trace_id=response_trace_id)
 
     return AskResponse(
-        trace_id=trace_id,
+        trace_id=response_trace_id,
         answer=response.final_answer,
         sources=response.retrieved_sources,
         review_decision=response.review_decision,

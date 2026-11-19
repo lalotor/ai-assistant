@@ -5,11 +5,9 @@ the module's public failure-classification interface, called only from
 run_evaluation() for items that already failed the score >= 0.5 pass
 threshold. These tests verify that contract directly.
 
-Note: evaluation.runner performs environment validation and logging
-configuration at import time (by design, per its module docstring, so
-all initialisation is centralised). This requires a valid .env to be
-present, matching how the module is used in practice (via
-`python -m evaluation.runner`).
+The runner is import-safe so its public evaluation functions can be reused
+by the application runtime. CLI logging and environment validation are
+configured when `python -m evaluation.runner` starts.
 """
 import json
 import subprocess
@@ -18,7 +16,12 @@ import pytest
 from structlog.testing import capture_logs
 
 from app.contracts.response import QueryResponse
-from evaluation.runner import ask_assistant, classify_failure, score_keywords
+from evaluation.runner import (
+    ask_assistant,
+    classify_failure,
+    run_evaluation,
+    score_keywords,
+)
 
 
 def make_response(**overrides) -> QueryResponse:
@@ -169,3 +172,26 @@ class TestAskAssistant:
 
         command = run.call_args.args[0]
         assert ("--revision" in command) is expect_flag
+
+
+@pytest.mark.unit
+class TestRunEvaluation:
+    def test_saves_progress_to_the_requested_results_file(self, mocker, tmp_path):
+        dataset = tmp_path / "dataset.json"
+        dataset.write_text(
+            json.dumps([{"question": "What is X?", "expected_keywords": ["x"]}]),
+            encoding="utf-8",
+        )
+        output = tmp_path / "results" / "evaluation.json"
+        mocker.patch(
+            "evaluation.runner.ask_assistant",
+            side_effect=RuntimeError("private provider details"),
+        )
+
+        results = run_evaluation(str(dataset), results_file=str(output))
+
+        saved = json.loads(output.read_text(encoding="utf-8"))
+        assert results[0]["status"] == "error"
+        assert results[0]["error_type"] == "RuntimeError"
+        assert saved["summary"]["total_questions"] == 1
+        assert saved["results"][0]["error"] == "private provider details"

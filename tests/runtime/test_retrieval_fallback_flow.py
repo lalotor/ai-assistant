@@ -13,8 +13,10 @@ from app.contracts.response import QueryResponse
 from app.contracts.retrieval import LoadedDocument
 from app.contracts.tools import ToolDecision
 from app.api.routes.ask import router as ask_router
+from app.api.routes.trace import router as trace_router
 from app.rag.chunking import chunk_document
 from app.runtime.assistant_runtime import AssistantRuntime
+from app.trace_store import TraceStore
 
 
 def _structured_llm(parsed, *, model_name="gpt-5.4-mini", invoke=None):
@@ -32,7 +34,9 @@ def _structured_llm(parsed, *, model_name="gpt-5.4-mini", invoke=None):
 
 @pytest.mark.unit
 class TestRetrievalFallbackFlow:
-    def test_keyword_fallback_reaches_final_answer_with_degraded_trace(self, mocker):
+    def test_keyword_fallback_reaches_final_answer_with_degraded_trace(
+        self, mocker, tmp_path
+    ):
         decision = ToolDecision(
             tool="doc_retriever",
             reason="Look up the inputs to DiffService in the internal documentation.",
@@ -95,7 +99,9 @@ class TestRetrievalFallbackFlow:
             invoke=Mock(return_value=Mock(content="0,1,2,3", usage_metadata=None)),
         )
         mocker.patch("app.tools.doc_retriever.get_llm", return_value=reranker_llm)
-        runtime = AssistantRuntime()
+        runtime = AssistantRuntime(
+            trace_store=TraceStore(tmp_path / "traces.sqlite3")
+        )
         runtime.graph = get_graph()
         mocker.patch.object(runtime, "setup", return_value=True)
 
@@ -124,9 +130,12 @@ class TestRetrievalFallbackFlow:
         assert response.execution_trace.retrieval_trace.vector_search_status == "failed"
         assert response.execution_trace.retrieval_trace.keyword_search_status == "succeeded"
         assert response.execution_trace.retrieval_trace.fallback_used is True
+        assert runtime.get_trace("fallback-flow") == response.execution_trace.to_dict()
         reviewer_structured.invoke.assert_called_once_with(reviewer_prompts[0])
 
-    def test_reviewer_failure_returns_generic_api_error_and_logs_safe_failed_trace(self, mocker):
+    def test_reviewer_failure_returns_a_retrievable_failed_trace(
+        self, mocker, tmp_path
+    ):
         decision = ToolDecision(
             tool="none",
             reason="No specialized tool is needed.",
@@ -142,20 +151,25 @@ class TestRetrievalFallbackFlow:
             with_structured_output=Mock(return_value=reviewer_structured),
         )
         mocker.patch("app.agents.reviewer.get_llm", return_value=reviewer_llm)
-        runtime = AssistantRuntime()
+        runtime = AssistantRuntime(
+            trace_store=TraceStore(tmp_path / "traces.sqlite3")
+        )
         runtime.graph = get_graph()
         mocker.patch.object(runtime, "setup", return_value=True)
         api = FastAPI()
         api.state.runtime = runtime
         api.include_router(ask_router)
+        api.include_router(trace_router)
         error_log = mocker.patch("app.runtime.assistant_runtime.logger.error")
 
-        response = TestClient(api).post(
+        client = TestClient(api)
+        response = client.post(
             "/ask",
             json={"question": "PRIVATE QUESTION", "trace_id": "reviewer-failure"},
         )
 
         assert response.status_code == 500
+        assert response.headers["X-Trace-ID"] == "reviewer-failure"
         assert response.json()["detail"] == "The agent encountered an error processing your question."
         event = error_log.call_args.kwargs
         assert event["outcome"] == "failed"
@@ -172,3 +186,8 @@ class TestRetrievalFallbackFlow:
         assert "PRIVATE QUESTION" not in serialized_trace
         assert "PRIVATE_PROVIDER_DETAIL" not in serialized_trace
         assert event["execution_trace"]["outcome"] == "failed"
+
+        trace_response = client.get("/trace/reviewer-failure")
+        assert trace_response.status_code == 200
+        assert trace_response.json()["execution_trace"]["outcome"] == "failed"
+        assert trace_response.json()["execution_trace"]["failed_stage"] == "reviewer"

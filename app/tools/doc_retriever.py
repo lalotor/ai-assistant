@@ -8,7 +8,7 @@ from app.rag.keyword_retriever import keyword_search
 from app.rag.retriever import retrieve_context
 from app.rag.vector_store import get_vector_store, get_cached_chunks
 from app.utils.util import calculate_duration_ms
-from app.utils.llm import get_llm, extract_usage
+from app.utils.llm import get_llm, extract_model_usage
 from app.prompts import format_prompt
 
 # Get logger for this module
@@ -253,7 +253,7 @@ def _rerank_results(query: str, results: list[dict], retrieval_trace: RetrievalT
         )
 
         response = llm.invoke(rerank_prompt)
-        token_usage = extract_usage(response, model_name=llm.model_name)
+        token_usage = extract_model_usage(response, model=llm)
         indexes = _parse_indexes(response.content, len(results))
         if not indexes:
             retrieval_trace.rerank_error_type = "InvalidRerankerOutput"

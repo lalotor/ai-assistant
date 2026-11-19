@@ -1,68 +1,135 @@
-# Setting Up the Python Environment with uv
-1. **Init project**:
-   ```bash
-   uv init --python 3.13.5 ai-assistant
-   cd ai-assistant
-   ```
-2. **Venv**
-   ```bash
-   uv venv
-   source .venv/bin/activate
-   ```
+# Local Setup
 
-3. **Dependencies**
-   ```bash
-   uv add langchain_core langchain-openai langgraph langchain-text-splitters langchain_community ipython python-dotenv structlog pytest pytest-cov pytest-mock faiss-cpu "fastapi[standard]"
-   ```
-# FastAPI
-## Run the Development Server
+Requires Python 3.13.5 or newer and [uv](https://docs.astral.sh/uv/).
+
 ```bash
-uv run fastapi dev app/api/main.py
+uv sync
+cp .env.sample .env
+# The default chat and embedding providers are OpenAI.
+# Set OPENAI_API_KEY in .env, or choose Gemini for both providers:
+# LLM_PROVIDER=gemini
+# EMBEDDING_PROVIDER=gemini
+# GEMINI_API_KEY=your-key
+# Or use Groq chat with local embeddings:
+# LLM_PROVIDER=groq
+# EMBEDDING_PROVIDER=local
+# GROQ_API_KEY=your-key
 ```
+
+The first run initializes the local vector store and may take 1-2 minutes.
+OpenAI remains the default chat and embedding provider. To use Gemini without
+an OpenAI key, set both `LLM_PROVIDER=gemini` and `EMBEDDING_PROVIDER=gemini`,
+then set `GEMINI_API_KEY`. `LLM_MODEL` and `GEMINI_EMBEDDING_MODEL` can override
+the provider defaults. Changing the embedding provider or model automatically
+rebuilds the local FAISS index; the rebuild re-embeds the document corpus and
+may incur provider usage. The Gemini chat default follows the model's
+temperature default; OpenAI retains the existing temperature of `0`.
+See [ADR 0004](./docs/adr/0004-selectable-gemini-model-provider.md) for the
+provider and embedding-index compatibility decision.
+
+To use Groq for chat without another paid embedding API, set
+`LLM_PROVIDER=groq`, `GROQ_API_KEY`, and `EMBEDDING_PROVIDER=local`. Groq is
+called through the OpenAI-compatible Chat Completions endpoint; `LLM_MODEL`
+defaults to `openai/gpt-oss-20b`. The local embedding model defaults to
+`sentence-transformers/all-MiniLM-L6-v2`, downloads on first use, and is
+configurable with `LOCAL_EMBEDDING_MODEL`. This model runs locally on CPU and
+requires no Gemini or OpenAI key. Groq structured responses use function
+calling to accommodate Groq's schema handling. Selecting local embeddings
+rebuilds the FAISS index and re-embeds the corpus. See
+[ADR 0005](./docs/adr/0005-groq-chat-and-local-embeddings.md).
+
+## FastAPI
+
+Run the development server bound to loopback:
+
+```bash
+uv run fastapi dev app/api/main.py --host 127.0.0.1
+```
+
+The API has no authentication and is intended for trusted local/internal use
+only. Do not bind it to a public or untrusted network: trace lookup returns
+full request content and evaluation results can contain sensitive data.
+
+### `POST /ask`
+
+```bash
+curl -sS http://127.0.0.1:8000/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"What does the architecture_advisor tool do?"}'
+```
+
+The response contains `trace_id`, `answer`, `sources`, and review metadata.
+Use the returned ID to retrieve the full trace. If supplying your own
+`trace_id`, keep it unique: reusing an ID replaces the previously stored trace.
+
+```bash
+curl -sS http://127.0.0.1:8000/trace/<trace_id>
+```
+
+`GET /trace/{trace_id}` returns the full execution trace or `404` if it is
+unknown or expired. Traces are stored in
+`data/traces/execution_traces.sqlite3` and retained for seven days.
+
+### `POST /evaluate`
+
+Evaluation runs synchronously from the caller's perspective; the route uses a
+worker thread so the API event loop remains responsive. Only built-in datasets
+are accepted (`smoke`, `full`, or `revision`), and the default is `smoke`:
+
+```bash
+curl -sS http://127.0.0.1:8000/evaluate \
+  -H 'Content-Type: application/json' \
+  -d '{"dataset":"smoke","revision_enabled":false}'
+```
+
+The response includes aggregate metrics, per-question results, outcome counts,
+and the local raw-results path under `evaluation/results/`. The endpoint does
+not accept arbitrary dataset paths.
 
 # Running the Agent
 ## Interactive mode
 ```bash
-python main.py
+uv run python main.py
 ```
 
 ## Non-interactive mode, default output
 ```bash
-python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?"
+uv run python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?"
 ```
 
 ## Non-interactive mode, JSON output
 ```bash
-python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?"  --json
+uv run python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?" --json
 ```
 
 ## Non-interactive mode with bounded revision
 ```bash
-python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?" --json --revision
+uv run python main.py --question "Considering only your internal documentation, how many ingestion file source types do we have?" --json --revision
 ```
 
 Revision is opt-in. The graph allows at most one revision when the Reviewer
 returns `revise` with actionable feedback, then performs one final review. The
-API exposes the same switch with `"revision_enabled": true` on `POST /ask`.
+API exposes the same switch with `"revision_enabled": true` on `POST /ask` and
+`POST /evaluate`.
 
 ## Run the evaluation suite
 ```bash
 # Single-pass mode
-python -m evaluation.runner --dataset evaluation/datasets/retrieval_eval_full.json
+uv run python -m evaluation.runner --dataset evaluation/datasets/retrieval_eval_full.json
 
 # Revision-enabled mode (same dataset/model/scoring)
-python -m evaluation.runner --dataset evaluation/datasets/retrieval_eval_full.json --revision
+uv run python -m evaluation.runner --dataset evaluation/datasets/retrieval_eval_full.json --revision
 
 # Compare repeated runs per mode
-python -m evaluation.compare \
+uv run python -m evaluation.compare \
   --baseline "evaluation/results/eval_single_pass_*.json" \
   --revision "evaluation/results/eval_revision_*.json"
 ```
 
 ## Run evaluation report
 ```bash
-python -m evaluation.build_report --results evaluation/results/eval_<ts>.json --title "Baseline run" --name baseline
-python -m evaluation.build_report --title "Baseline run" --name baseline   # uses the most recent results file
+uv run python -m evaluation.build_report --results evaluation/results/eval_<ts>.json --title "Baseline run" --name baseline
+uv run python -m evaluation.build_report --title "Baseline run" --name baseline   # uses the most recent results file
 ```
 
 # Running unit tests suite
@@ -91,7 +158,7 @@ Core stack:
 - LangChain
 - FAISS
 - OpenAI API
-- FastAPI (later stages)
+- FastAPI (local REST API)
 
 ---
 

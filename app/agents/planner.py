@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from app.contracts.tools import ToolDecision
 from app.contracts.agent import AgentState
-from app.utils.llm import get_llm, extract_usage
+from app.utils.llm import get_llm, get_structured_output, extract_model_usage
 from app.tools.registry import TOOLS
 from app.prompts import format_prompt
 
@@ -81,10 +81,14 @@ def get_tool_decision(question: str) -> tuple[ToolDecision, Optional[dict]]:
     # Use structured output with Pydantic model, include_raw=True to reach
     # usage_metadata (only present on the raw AIMessage, not the parsed model)
     llm = get_llm()
-    llm_with_structure = llm.with_structured_output(ToolDecision, include_raw=True)
+    llm_with_structure = get_structured_output(
+        llm,
+        ToolDecision,
+        include_raw=True,
+    )
     outcome = llm_with_structure.invoke(tool_selection_prompt)
     response = outcome["parsed"]
-    token_usage = extract_usage(outcome["raw"], model_name=llm.model_name)
+    token_usage = extract_model_usage(outcome["raw"], model=llm)
 
     logger.debug(
         "get_tool_decision_response",

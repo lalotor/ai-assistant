@@ -30,13 +30,14 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
 - **Tool-Based Routing**: Intelligent selection between code explanation, documentation retrieval, and architecture advice
 - **RAG-Powered Knowledge Base**: Vector store-based document retrieval with FAISS
 - **Structured Logging**: Production-ready observability with correlation tracking
-- **Environment Validation**: Startup validation ensures all required configuration is present
+- **Provider Selection**: OpenAI remains the default; OpenAI, Gemini, and Groq chat providers are supported, with local embeddings available for RAG
+- **Environment Validation**: Startup validation ensures credentials match the selected providers
 
 ### System Characteristics
 
 - **Language**: Python 3.13.5
 - **Framework**: LangGraph (LangChain ecosystem)
-- **LLM Provider**: OpenAI (GPT-5-nano)
+- **LLM Provider**: OpenAI by default, with Gemini and Groq supported
 - **Vector Store**: FAISS (Facebook AI Similarity Search)
 - **Logging**: Structlog with JSON/console output modes
 - **Package Manager**: uv (modern Python package manager)
@@ -109,7 +110,7 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
         ▼                  ▼                  ▼
 ┌─────────────┐   ┌──────────────────┐   ┌──────────┐
 │     LLM     │   │   RAG Pipeline   │   │   LLM    │
-│  (OpenAI)   │   │                  │   │(OpenAI)  │
+│ (Configured)│   │                  │   │(Configured)│
 └─────────────┘   │  ┌────────────┐  │   └──────────┘
                   │  │ Ingestion  │  │
                   │  └──────┬─────┘  │
@@ -194,6 +195,32 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
 7. graph.invoke(initial_state)       # Execute workflow
 8. json.dumps(output)                # (if --json) Print structured output
 ```
+
+---
+
+### REST API Runtime (`app/api/`)
+
+`app.api.main` creates one `AssistantRuntime` in the FastAPI lifespan and
+initializes its graph and vector store at startup. Routes validate HTTP
+contracts and delegate orchestration to the runtime. Synchronous graph and
+evaluation calls run in worker threads so they do not block the event loop;
+the HTTP caller still waits for the operation to finish.
+
+| Endpoint | Behavior |
+|---|---|
+| `GET /health` | Reports service health and whether runtime setup completed. |
+| `POST /ask` | Runs one question and returns its answer, sources, review outcome, and trace ID. |
+| `POST /evaluate` | Runs a server-selected `smoke`, `full`, or `revision` dataset and returns aggregate and per-question results. |
+| `GET /trace/{trace_id}` | Returns the full stored trace, or `404` if it is unknown or expired. |
+
+Successful requests and workflow-stage failures persist full execution traces
+in `data/traces/execution_traces.sqlite3`; traces expire after seven days.
+The evaluation route writes raw results under `evaluation/results/`. Neither
+storage location is intended as a shared or managed production datastore.
+
+The API has no authentication or authorization. It is for trusted local/internal
+use only and must not be exposed on a public or untrusted network: trace records
+include questions, answers, retrieved content, and stage snapshots.
 
 ---
 
@@ -464,17 +491,26 @@ chunk.metadata.update({
 
 **Provider Configuration:**
 ```python
-EMBEDDING_PROVIDER=openai  # Environment variable
-model="text-embedding-3-small"  # OpenAI model
+EMBEDDING_PROVIDER=openai  # openai, gemini, or local; OpenAI is the default
+text-embedding-3-small     # OpenAI default
+gemini-embedding-2-preview # Gemini default
+sentence-transformers/all-MiniLM-L6-v2 # Local default
 ```
 
-**Factory Pattern:**
-```python
-def get_embeddings():
-    provider = os.getenv("EMBEDDING_PROVIDER", "openai")
-    if provider == "openai":
-        return OpenAIEmbeddings(model="text-embedding-3-small")
-```
+The chat provider is selected separately with `LLM_PROVIDER` (`openai` by
+default, `gemini`, or `groq`). `OPENAI_API_KEY` is required when either selected
+provider is OpenAI; `GEMINI_API_KEY` is required when either is Gemini;
+`GROQ_API_KEY` is required when chat uses Groq. Local embeddings use the
+`sentence-transformers/all-MiniLM-L6-v2` model and require no API key.
+`LLM_MODEL`, `GEMINI_EMBEDDING_MODEL`, and `LOCAL_EMBEDDING_MODEL` optionally
+override model defaults.
+The vector store records its embedding provider/model and rebuilds when that
+configuration changes. A rebuild re-embeds the local corpus.
+
+`get_embeddings()` constructs the selected OpenAI, Gemini, or local Hugging
+Face embedding model. The local sentence-transformer model downloads on first
+use and runs on CPU. The persisted FAISS index records the provider and model
+so incompatible vectors are rebuilt instead of mixed.
 
 #### **Vector Store** (`vector_store.py`)
 
@@ -494,7 +530,7 @@ def get_vector_store() -> FAISS:
 **Initialization Logic:**
 1. Check if persisted store exists at `VECTOR_STORE_PATH`
 2. If exists: Load from disk using `FAISS.load_local()`
-3. If not exists or force_rebuild: Build from scratch
+3. If missing, forced, or embedding config differs: Build from scratch
 4. Persist to disk using `save_local()`
 
 **Key Functions:**
@@ -554,12 +590,18 @@ def retrieve_context(vector_store, query, k=7, score_threshold=1.2):
 
 | Variable | Required | Default | Validation |
 |----------|----------|---------|------------|
-| `OPENAI_API_KEY` | ✅ Yes | - | Must start with `sk-`, length > 20 |
+| `LLM_PROVIDER` | ❌ No | `openai` | Must be `openai`, `gemini`, or `groq` |
+| `LLM_MODEL` | ❌ No | Provider-specific | Optional chat model override |
+| `OPENAI_API_KEY` | Conditional | - | Required if chat or embeddings use OpenAI; starts with `sk-`, length > 20 |
+| `GEMINI_API_KEY` | Conditional | - | Required if chat or embeddings use Gemini |
+| `GROQ_API_KEY` | Conditional | - | Required if chat uses Groq |
 | `LOG_LEVEL` | ❌ No | `INFO` | Must be DEBUG/INFO/WARNING/ERROR/CRITICAL |
 | `JSON_LOGS` | ❌ No | `false` | Must be true/false |
 | `LOG_FILE_PATH` | ❌ No | `logs/app.log` | - |
 | `ENABLE_FILE_LOGGING` | ❌ No | `false` | Must be true/false |
-| `EMBEDDING_PROVIDER` | ❌ No | `openai` | Must be openai |
+| `EMBEDDING_PROVIDER` | ❌ No | `openai` | Must be `openai`, `gemini`, or `local` |
+| `GEMINI_EMBEDDING_MODEL` | ❌ No | `gemini-embedding-2-preview` | Optional Gemini embedding model override |
+| `LOCAL_EMBEDDING_MODEL` | ❌ No | `sentence-transformers/all-MiniLM-L6-v2` | Optional local Hugging Face model override |
 | `VECTOR_STORE_PATH` | ❌ No | `data/vector_store` | - |
 | `SIMILARITY_THRESHOLD` | ❌ No | `1.2` | - |
 
@@ -622,17 +664,13 @@ logger.info(
 
 #### **LLM Client** (`llm.py`)
 
-**Purpose**: Centralized LLM client factory
-
-```python
-def get_llm(model="gpt-5-nano", temperature=0):
-    return ChatOpenAI(model=model, temperature=temperature)
-```
+**Purpose**: Centralized provider-neutral LangChain chat model factory
 
 **Configuration:**
-- Model: `gpt-5-nano` (default)
-- Temperature: `0` (deterministic)
-- API Key: From `OPENAI_API_KEY` environment variable
+- Provider: `LLM_PROVIDER` (`openai` by default, `gemini`, or `groq`)
+- Model: Provider default; optionally overridden with `LLM_MODEL`
+- Temperature: OpenAI and Groq default to `0`; Gemini uses its model default unless explicitly overridden
+- API key: `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `GROQ_API_KEY` for the selected provider
 
 ---
 
@@ -741,7 +779,7 @@ def get_llm(model="gpt-5-nano", temperature=0):
                   ▼
          ┌──────────────────────┐
          │ get_embeddings()     │
-         │ (OpenAI)             │
+         │ (configured provider)│
          └────────┬─────────────┘
                   │
                   ▼
@@ -810,8 +848,8 @@ def get_llm(model="gpt-5-nano", temperature=0):
 | **Package Manager** | uv | - | Dependency management |
 | **LLM Framework** | LangChain Core | 1.2.28 | LLM abstractions |
 | **Workflow** | LangGraph | 1.1.6 | Multi-agent orchestration |
-| **LLM Provider** | LangChain OpenAI | 1.1.12 | OpenAI integration |
-| **Embeddings** | LangChain OpenAI | 1.1.12 | Text embeddings |
+| **LLM Providers** | LangChain OpenAI / Google GenAI | - | OpenAI-default, Gemini, and Groq chat integrations |
+| **Embeddings** | LangChain OpenAI / Google GenAI / Hugging Face | - | OpenAI, Gemini, or local vector embeddings |
 | **Vector Store** | FAISS (CPU) | 1.13.2 | Similarity search |
 | **Text Splitting** | LangChain Text Splitters | 1.1.1 | Document chunking |
 | **Logging** | Structlog | 25.5.0 | Structured logging |
@@ -953,8 +991,18 @@ ai-assistant/
 **Template**: `.env.sample`
 
 ```bash
-# API Keys
+# Select providers; OpenAI remains the default.
+LLM_PROVIDER=openai
+EMBEDDING_PROVIDER=openai
 OPENAI_API_KEY=sk-...
+# For Gemini-only operation, use gemini for both providers and set GEMINI_API_KEY.
+# LLM_PROVIDER=gemini
+# EMBEDDING_PROVIDER=gemini
+# GEMINI_API_KEY=...
+# For Groq chat with local embeddings:
+# LLM_PROVIDER=groq
+# EMBEDDING_PROVIDER=local
+# GROQ_API_KEY=...
 
 # Logging Configuration
 LOG_LEVEL=INFO                    # DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -981,6 +1029,7 @@ validated_env = validate_environment(verbose=True)
 🔧 Environment Configuration Summary
 ============================================================
 ✅ OPENAI_API_KEY          = ***REDACTED***      [env]
+✅ LLM_PROVIDER            = openai              [default]
 ✅ LOG_LEVEL               = INFO                [env]
 ✅ JSON_LOGS               = false               [default]
 ✅ LOG_FILE_PATH           = logs/app.log        [default]
@@ -1099,7 +1148,7 @@ structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 ### **Retrieval Process**
 
 1. **Query**: User question from `doc_retriever` tool
-2. **Embedding**: Generate query embedding (OpenAI)
+2. **Embedding**: Generate query embedding using the configured provider
 3. **Search**: FAISS similarity search (L2 distance)
 4. **Filtering**: Keep documents with score < threshold (1.2)
 5. **Ranking**: Sort by similarity score
@@ -1126,14 +1175,14 @@ structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 2. **Install Dependencies:**
    ```bash
    uv add langchain_core langchain-openai langgraph langchain-text-splitters \
-          langchain-huggingface langchain_community ipython python-dotenv \
+          langchain-google-genai langchain_community ipython python-dotenv \
           structlog pytest pytest-cov pytest-mock faiss-cpu
    ```
 
 3. **Configure Environment:**
    ```bash
    cp .env.sample .env
-   # Edit .env and add OPENAI_API_KEY
+   # Configure the selected chat and embedding providers and their API key(s)
    ```
 
 4. **Initialize Vector Store:**
@@ -1167,9 +1216,11 @@ structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 - Monitor error rates and latencies
 
 #### **Scalability**
-- Current design: Single-threaded, synchronous
-- For concurrent requests: Add async support
-- For high load: Deploy multiple instances with shared vector store
+- Graph and evaluation work is synchronous but offloaded from the API event
+  loop to worker threads; throughput is bounded by the thread pool and external
+  service latency.
+- For high load: add explicit capacity controls and deploy instances with a
+  shared vector store and appropriately managed trace storage.
 
 ### **Monitoring**
 
@@ -1179,7 +1230,7 @@ structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 - LLM call latency
 - Vector store query time
 - Error rates by component
-- Token usage (OpenAI)
+- Token usage by configured model
 
 **Logging Integration:**
 - Structlog JSON output → Log aggregation (ELK, Splunk)
@@ -1414,12 +1465,12 @@ All LLM prompts are externalized to `app/prompts/` directory as `.txt` files.
    - ~~Add automated testing for agent responses~~ ✅ Done
    - ~~Implement RAG evaluation metrics (precision, recall)~~ ✅ Partial (keyword + source scoring)
    - Implement LLM-as-judge grading for answer quality
-   - Add baseline comparison between evaluation runs
+   - ~~Add baseline comparison between evaluation runs~~ ✅ Done
    - A/B testing for prompt variations
    - Expand evaluation dataset beyond 10 questions
 
 4. **UI/API Layer**
-   - Build REST API (FastAPI)
+   - ~~Build local REST API (FastAPI)~~ ✅ Done (`/ask`, `/evaluate`, `/trace/{trace_id}`)
    - Add web interface
    - Implement streaming responses
 
