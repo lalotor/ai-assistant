@@ -6,6 +6,8 @@ store), with app.state.runtime replaced by a mock. This exercises
 request validation, response shaping, and error translation - the
 route's actual job - without any LLM calls or graph execution.
 """
+from uuid import UUID
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -88,7 +90,11 @@ class TestAskRoute:
 
         response = client.post(
             "/ask",
-            json={"question": "hello", "revision_enabled": True},
+            json={
+                "question": "hello",
+                "trace_id": "caller-id",
+                "revision_enabled": True,
+            },
         )
 
         assert response.status_code == 200
@@ -97,7 +103,7 @@ class TestAskRoute:
         assert body["revision_count"] == 1
         assert body["review_outcome"] == "revised"
         mock_runtime.run_question.assert_called_once_with(
-            "hello", None, revision_enabled=True
+            "hello", "caller-id", revision_enabled=True
         )
 
     def test_rejects_an_empty_question_with_a_422(self, mocker):
@@ -120,6 +126,21 @@ class TestAskRoute:
         assert response.status_code == 500
         assert "graph exploded" not in response.json()["detail"]
         assert "secret path" not in str(error_log.call_args)
+
+    def test_returns_a_trace_id_header_when_a_request_fails(self, mocker):
+        mock_runtime = mocker.Mock()
+        mock_runtime.run_question.side_effect = RuntimeError("private failure")
+        generated_id = UUID("a7474c61-5158-4d38-9162-c0b6d6d7196f")
+        mocker.patch("app.api.routes.ask.uuid.uuid4", return_value=generated_id)
+        client = TestClient(make_app(mock_runtime))
+
+        response = client.post("/ask", json={"question": "hello"})
+
+        assert response.status_code == 500
+        assert response.headers["X-Trace-ID"] == str(generated_id)
+        mock_runtime.run_question.assert_called_once_with(
+            "hello", str(generated_id), revision_enabled=False
+        )
 
     def test_falls_back_to_the_caller_supplied_trace_id_when_no_execution_trace_is_returned(self, mocker):
         mock_runtime = mocker.Mock()

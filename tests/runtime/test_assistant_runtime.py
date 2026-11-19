@@ -12,9 +12,17 @@ import openai
 from structlog.testing import capture_logs
 
 from app.contracts.agent import AgentState
+from app.contracts.errors import WorkflowStageError
 from app.contracts.retrieval import RetrievalUnavailableError
+from app.contracts.trace import ExecutionTrace
 from app.contracts.tools import InvalidToolSelectionError, ToolExecutionError
 from app.runtime.assistant_runtime import AssistantRuntime
+from app.trace_store import TraceStore
+
+
+@pytest.fixture(autouse=True)
+def isolate_default_trace_store(mocker):
+    mocker.patch("app.runtime.assistant_runtime.TraceStore", return_value=mocker.Mock())
 
 
 @pytest.fixture
@@ -144,6 +152,110 @@ class TestAssistantRuntimeRunQuestion:
         assert response.final_answer == "the answer"
         assert response.retrieved_sources == ["a.md"]
         assert response.execution_trace.trace_id == "t-1"
+
+    def test_persists_successful_traces_for_later_lookup(self, mocker, tmp_path):
+        trace = ExecutionTrace(
+            trace_id="t-persisted",
+            started_at=None,
+            ended_at=None,
+            duration_ms=5.0,
+            planner_events=[],
+            worker_events=[],
+            reviewer_events=[],
+            retrieval_trace=None,
+            final_answer="the answer",
+        )
+        runtime = AssistantRuntime(
+            trace_store=TraceStore(tmp_path / "traces.sqlite3")
+        )
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.return_value = self._final_result()
+        mocker.patch(
+            "app.runtime.assistant_runtime.build_execution_trace",
+            return_value=trace,
+        )
+
+        runtime.run_question("hello", trace_id="t-persisted")
+
+        assert runtime.get_trace("t-persisted") == trace.to_dict()
+
+    def test_persists_failed_stage_traces_before_reraising(self, mocker, tmp_path):
+        trace = ExecutionTrace(
+            trace_id="t-failed",
+            started_at=None,
+            ended_at=None,
+            duration_ms=5.0,
+            planner_events=[],
+            worker_events=[],
+            reviewer_events=[],
+            retrieval_trace=None,
+            final_answer="",
+            outcome="failed",
+            failed_stage="reviewer",
+            failure_category="reviewer_failure",
+            failure_type="TimeoutError",
+        )
+        runtime = AssistantRuntime(
+            trace_store=TraceStore(tmp_path / "traces.sqlite3")
+        )
+        runtime._is_initialized = True
+        runtime.graph = mocker.Mock()
+        runtime.graph.invoke.side_effect = WorkflowStageError(
+            stage="reviewer",
+            failure_category="reviewer_failure",
+            failure_type="TimeoutError",
+            stage_timings={},
+        )
+        mocker.patch(
+            "app.runtime.assistant_runtime.build_failed_execution_trace",
+            return_value=trace,
+        )
+
+        with pytest.raises(WorkflowStageError):
+            runtime.run_question("hello", trace_id="t-failed")
+
+        assert runtime.get_trace("t-failed") == trace.to_dict()
+
+    def test_runs_a_registered_evaluation_and_returns_a_safe_summary(self, mocker):
+        results = [
+            {"question": "What is X?", "status": "pass", "score": 1.0},
+            {
+                "question": "What is Y?",
+                "status": "error",
+                "error": "private provider detail",
+                "error_type": "RuntimeError",
+            },
+        ]
+        run_evaluation = mocker.patch(
+            "evaluation.runner.run_evaluation", return_value=results
+        )
+        report = {"questions": 2, "evaluated": 1}
+        mocker.patch("evaluation.report.build_baseline_report", return_value=report)
+        runtime = AssistantRuntime()
+
+        result = runtime.run_evaluation("smoke", revision_enabled=True)
+
+        assert result["dataset"] == "smoke"
+        assert result["revision_enabled"] is True
+        assert result["summary"] == report
+        assert result["status_counts"] == {"error": 1, "pass": 1}
+        assert result["results"][1]["error_type"] == "RuntimeError"
+        assert "error" not in result["results"][1]
+        assert result["results_file"].startswith(
+            "evaluation/results/eval_api_smoke_revision_"
+        )
+        run_evaluation.assert_called_once()
+        args, kwargs = run_evaluation.call_args
+        assert args[0].endswith("evaluation/datasets/retrieval_eval_smoke.json")
+        assert kwargs["revision_enabled"] is True
+        assert kwargs["results_file"].endswith(result["results_file"])
+
+    def test_rejects_an_unregistered_evaluation_dataset(self):
+        runtime = AssistantRuntime()
+
+        with pytest.raises(ValueError, match="Unsupported evaluation dataset"):
+            runtime.run_evaluation("../private.json")
 
     def test_passes_revision_enabled_to_the_initial_state(self, mocker):
         runtime = AssistantRuntime()

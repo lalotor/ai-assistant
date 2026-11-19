@@ -17,6 +17,7 @@ env/
 .env
 logs/
 data/vector_store/
+data/traces/
 evaluation/results/
 
 # uv-specific

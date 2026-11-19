@@ -197,6 +197,32 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
 
 ---
 
+### REST API Runtime (`app/api/`)
+
+`app.api.main` creates one `AssistantRuntime` in the FastAPI lifespan and
+initializes its graph and vector store at startup. Routes validate HTTP
+contracts and delegate orchestration to the runtime. Synchronous graph and
+evaluation calls run in worker threads so they do not block the event loop;
+the HTTP caller still waits for the operation to finish.
+
+| Endpoint | Behavior |
+|---|---|
+| `GET /health` | Reports service health and whether runtime setup completed. |
+| `POST /ask` | Runs one question and returns its answer, sources, review outcome, and trace ID. |
+| `POST /evaluate` | Runs a server-selected `smoke`, `full`, or `revision` dataset and returns aggregate and per-question results. |
+| `GET /trace/{trace_id}` | Returns the full stored trace, or `404` if it is unknown or expired. |
+
+Successful requests and workflow-stage failures persist full execution traces
+in `data/traces/execution_traces.sqlite3`; traces expire after seven days.
+The evaluation route writes raw results under `evaluation/results/`. Neither
+storage location is intended as a shared or managed production datastore.
+
+The API has no authentication or authorization. It is for trusted local/internal
+use only and must not be exposed on a public or untrusted network: trace records
+include questions, answers, retrieved content, and stage snapshots.
+
+---
+
 ### 2. **Agent System** (`app/agents/`)
 
 #### **State Management** (`contracts/agent.py`)
@@ -1167,9 +1193,11 @@ structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 - Monitor error rates and latencies
 
 #### **Scalability**
-- Current design: Single-threaded, synchronous
-- For concurrent requests: Add async support
-- For high load: Deploy multiple instances with shared vector store
+- Graph and evaluation work is synchronous but offloaded from the API event
+  loop to worker threads; throughput is bounded by the thread pool and external
+  service latency.
+- For high load: add explicit capacity controls and deploy instances with a
+  shared vector store and appropriately managed trace storage.
 
 ### **Monitoring**
 
@@ -1414,12 +1442,12 @@ All LLM prompts are externalized to `app/prompts/` directory as `.txt` files.
    - ~~Add automated testing for agent responses~~ ✅ Done
    - ~~Implement RAG evaluation metrics (precision, recall)~~ ✅ Partial (keyword + source scoring)
    - Implement LLM-as-judge grading for answer quality
-   - Add baseline comparison between evaluation runs
+   - ~~Add baseline comparison between evaluation runs~~ ✅ Done
    - A/B testing for prompt variations
    - Expand evaluation dataset beyond 10 questions
 
 4. **UI/API Layer**
-   - Build REST API (FastAPI)
+   - ~~Build local REST API (FastAPI)~~ ✅ Done (`/ask`, `/evaluate`, `/trace/{trace_id}`)
    - Add web interface
    - Implement streaming responses
 

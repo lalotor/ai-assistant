@@ -1,6 +1,10 @@
 import uuid
 import openai
+import sqlite3
 import structlog
+from collections import Counter
+from pathlib import Path
+from typing import Any
 from dotenv import load_dotenv
 
 from app.contracts.response import QueryResponse
@@ -9,6 +13,7 @@ from app.contracts.errors import WorkflowStageError
 from app.contracts.retrieval import RetrievalUnavailableError
 from app.contracts.tools import InvalidToolSelectionError, ToolExecutionError
 from app.tracing import build_execution_trace, build_failed_execution_trace
+from app.trace_store import TraceStore
 
 logger = structlog.get_logger(__name__)
 
@@ -21,9 +26,10 @@ class AssistantRuntime:
     other interface without duplicating setup or orchestration logic.
     """
 
-    def __init__(self):
+    def __init__(self, trace_store: TraceStore | None = None):
         self._is_initialized = False
         self.graph = None  # Will be initialized in setup
+        self._trace_store = trace_store or TraceStore()
 
     def setup(self) -> bool:
         """Initialize all required dependencies for the runtime.
@@ -137,6 +143,7 @@ class AssistantRuntime:
             logger.debug("question_answered_successfully")
 
             trace = build_execution_trace(final_result)
+            self._trace_store.save(trace)
             logger.info(
                 "execution_trace_built",
                 trace_id=trace.trace_id
@@ -151,6 +158,14 @@ class AssistantRuntime:
                     failure_type=e.failure_type,
                     review_state=e.review_state,
                 )
+                try:
+                    self._trace_store.save(failed_trace)
+                except (OSError, sqlite3.Error) as persistence_error:
+                    logger.error(
+                        "execution_trace_persistence_failed",
+                        trace_id=trace_id,
+                        error_type=type(persistence_error).__name__,
+                    )
                 logger.error(
                     "workflow_execution_failed",
                     trace_id=trace_id,
@@ -197,3 +212,60 @@ class AssistantRuntime:
             review_outcome=final_result.get("review_outcome"),
             execution_trace=trace
         )
+
+    def get_trace(self, trace_id: str) -> dict[str, Any] | None:
+        """Return a persisted execution trace when it is still within retention."""
+        return self._trace_store.get(trace_id)
+
+    def run_evaluation(
+        self,
+        dataset: str = "smoke",
+        *,
+        revision_enabled: bool = False,
+    ) -> dict[str, Any]:
+        """Run one supported evaluation dataset and return its report and results."""
+        dataset_files = {
+            "smoke": "retrieval_eval_smoke.json",
+            "full": "retrieval_eval_full.json",
+            "revision": "revision_eval.json",
+        }
+        if dataset not in dataset_files:
+            raise ValueError(f"Unsupported evaluation dataset: {dataset}")
+        if not self._is_initialized:
+            self.setup()
+
+        from evaluation.report import build_baseline_report
+        from evaluation.runner import run_evaluation
+
+        project_root = Path(__file__).resolve().parents[2]
+        dataset_path = project_root / "evaluation" / "datasets" / dataset_files[dataset]
+        mode = "revision" if revision_enabled else "single_pass"
+        results_file = (
+            project_root
+            / "evaluation"
+            / "results"
+            / f"eval_api_{dataset}_{mode}_{uuid.uuid4().hex}.json"
+        )
+        results = run_evaluation(
+            str(dataset_path),
+            revision_enabled=revision_enabled,
+            results_file=str(results_file),
+        )
+        public_results = []
+        for result in results:
+            public_result = dict(result)
+            if "error" in public_result:
+                public_result.pop("error")
+                public_result.setdefault("error_type", "evaluation_error")
+            public_results.append(public_result)
+
+        return {
+            "dataset": dataset,
+            "revision_enabled": revision_enabled,
+            "results_file": str(results_file.relative_to(project_root)),
+            "summary": build_baseline_report(results),
+            "status_counts": dict(sorted(Counter(
+                result.get("status", "unknown") for result in results
+            ).items())),
+            "results": public_results,
+        }
