@@ -18,6 +18,7 @@ import pytest
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
+from app.contracts.tools import ToolDecision
 from app.utils.llm import (
     LLM_MAX_RETRIES,
     LLM_REQUEST_TIMEOUT_SECONDS,
@@ -134,6 +135,66 @@ class TestGetLlmReliabilityConfiguration:
 
         with pytest.raises(RuntimeError, match="GEMINI_API_KEY is required"):
             get_llm()
+
+    def test_creates_groq_model_with_groq_endpoint_and_default_model(
+        self, mocker, monkeypatch
+    ):
+        monkeypatch.setenv("LLM_PROVIDER", "groq")
+        monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        chat_openai = mocker.patch("app.utils.llm.ChatOpenAI")
+
+        result = get_llm()
+
+        chat_openai.assert_called_once_with(
+            model="openai/gpt-oss-20b",
+            api_key="test-groq-key",
+            base_url="https://api.groq.com/openai/v1",
+            temperature=0,
+            max_retries=LLM_MAX_RETRIES,
+            request_timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+        )
+        assert result is chat_openai.return_value
+
+    def test_groq_model_uses_configured_model_and_temperature(
+        self, mocker, monkeypatch
+    ):
+        monkeypatch.setenv("LLM_PROVIDER", "groq")
+        monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+        monkeypatch.setenv("LLM_MODEL", "groq-test-model")
+        chat_openai = mocker.patch("app.utils.llm.ChatOpenAI")
+
+        get_llm(temperature=0.4)
+
+        chat_openai.assert_called_once_with(
+            model="groq-test-model",
+            api_key="test-groq-key",
+            base_url="https://api.groq.com/openai/v1",
+            temperature=0.4,
+            max_retries=LLM_MAX_RETRIES,
+            request_timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+        )
+
+    def test_groq_model_requires_its_api_key(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "groq")
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+        with pytest.raises(RuntimeError, match="GROQ_API_KEY is required"):
+            get_llm()
+
+    def test_groq_chat_model_can_build_planner_structured_output(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "groq")
+        monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+
+        model = get_llm()
+
+        structured_model = model.with_structured_output(
+            ToolDecision,
+            include_raw=True,
+        )
+
+        assert structured_model is not None
 
     def test_unknown_chat_provider_is_rejected(self, monkeypatch):
         monkeypatch.setenv("LLM_PROVIDER", "unsupported")

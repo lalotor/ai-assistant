@@ -30,14 +30,14 @@ The AI Assistant is a **multi-agent conversational system** built using LangGrap
 - **Tool-Based Routing**: Intelligent selection between code explanation, documentation retrieval, and architecture advice
 - **RAG-Powered Knowledge Base**: Vector store-based document retrieval with FAISS
 - **Structured Logging**: Production-ready observability with correlation tracking
-- **Provider Selection**: OpenAI remains the default; Gemini can be selected independently for chat and embeddings
+- **Provider Selection**: OpenAI remains the default; OpenAI, Gemini, and Groq chat providers are supported, with local embeddings available for RAG
 - **Environment Validation**: Startup validation ensures credentials match the selected providers
 
 ### System Characteristics
 
 - **Language**: Python 3.13.5
 - **Framework**: LangGraph (LangChain ecosystem)
-- **LLM Provider**: OpenAI by default, with Gemini supported
+- **LLM Provider**: OpenAI by default, with Gemini and Groq supported
 - **Vector Store**: FAISS (Facebook AI Similarity Search)
 - **Logging**: Structlog with JSON/console output modes
 - **Package Manager**: uv (modern Python package manager)
@@ -491,21 +491,26 @@ chunk.metadata.update({
 
 **Provider Configuration:**
 ```python
-EMBEDDING_PROVIDER=openai  # openai or gemini; OpenAI is the default
+EMBEDDING_PROVIDER=openai  # openai, gemini, or local; OpenAI is the default
 text-embedding-3-small     # OpenAI default
 gemini-embedding-2-preview # Gemini default
+sentence-transformers/all-MiniLM-L6-v2 # Local default
 ```
 
 The chat provider is selected separately with `LLM_PROVIDER` (`openai` by
-default, or `gemini`). `OPENAI_API_KEY` is required when either selected
-provider is OpenAI; `GEMINI_API_KEY` is required when either is Gemini.
-`LLM_MODEL` and `GEMINI_EMBEDDING_MODEL` optionally override model defaults.
+default, `gemini`, or `groq`). `OPENAI_API_KEY` is required when either selected
+provider is OpenAI; `GEMINI_API_KEY` is required when either is Gemini;
+`GROQ_API_KEY` is required when chat uses Groq. Local embeddings use the
+`sentence-transformers/all-MiniLM-L6-v2` model and require no API key.
+`LLM_MODEL`, `GEMINI_EMBEDDING_MODEL`, and `LOCAL_EMBEDDING_MODEL` optionally
+override model defaults.
 The vector store records its embedding provider/model and rebuilds when that
 configuration changes. A rebuild re-embeds the local corpus.
 
-`get_embeddings()` constructs the selected OpenAI or Gemini embedding model.
-The persisted FAISS index records the provider and model so incompatible
-vectors are rebuilt instead of mixed.
+`get_embeddings()` constructs the selected OpenAI, Gemini, or local Hugging
+Face embedding model. The local sentence-transformer model downloads on first
+use and runs on CPU. The persisted FAISS index records the provider and model
+so incompatible vectors are rebuilt instead of mixed.
 
 #### **Vector Store** (`vector_store.py`)
 
@@ -585,16 +590,18 @@ def retrieve_context(vector_store, query, k=7, score_threshold=1.2):
 
 | Variable | Required | Default | Validation |
 |----------|----------|---------|------------|
-| `LLM_PROVIDER` | ❌ No | `openai` | Must be `openai` or `gemini` |
+| `LLM_PROVIDER` | ❌ No | `openai` | Must be `openai`, `gemini`, or `groq` |
 | `LLM_MODEL` | ❌ No | Provider-specific | Optional chat model override |
 | `OPENAI_API_KEY` | Conditional | - | Required if chat or embeddings use OpenAI; starts with `sk-`, length > 20 |
 | `GEMINI_API_KEY` | Conditional | - | Required if chat or embeddings use Gemini |
+| `GROQ_API_KEY` | Conditional | - | Required if chat uses Groq |
 | `LOG_LEVEL` | ❌ No | `INFO` | Must be DEBUG/INFO/WARNING/ERROR/CRITICAL |
 | `JSON_LOGS` | ❌ No | `false` | Must be true/false |
 | `LOG_FILE_PATH` | ❌ No | `logs/app.log` | - |
 | `ENABLE_FILE_LOGGING` | ❌ No | `false` | Must be true/false |
-| `EMBEDDING_PROVIDER` | ❌ No | `openai` | Must be `openai` or `gemini` |
+| `EMBEDDING_PROVIDER` | ❌ No | `openai` | Must be `openai`, `gemini`, or `local` |
 | `GEMINI_EMBEDDING_MODEL` | ❌ No | `gemini-embedding-2-preview` | Optional Gemini embedding model override |
+| `LOCAL_EMBEDDING_MODEL` | ❌ No | `sentence-transformers/all-MiniLM-L6-v2` | Optional local Hugging Face model override |
 | `VECTOR_STORE_PATH` | ❌ No | `data/vector_store` | - |
 | `SIMILARITY_THRESHOLD` | ❌ No | `1.2` | - |
 
@@ -660,10 +667,10 @@ logger.info(
 **Purpose**: Centralized provider-neutral LangChain chat model factory
 
 **Configuration:**
-- Provider: `LLM_PROVIDER` (`openai` by default, or `gemini`)
+- Provider: `LLM_PROVIDER` (`openai` by default, `gemini`, or `groq`)
 - Model: Provider default; optionally overridden with `LLM_MODEL`
-- Temperature: OpenAI defaults to `0`; Gemini uses its model default unless explicitly overridden
-- API key: `OPENAI_API_KEY` or `GEMINI_API_KEY` for the selected provider
+- Temperature: OpenAI and Groq default to `0`; Gemini uses its model default unless explicitly overridden
+- API key: `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `GROQ_API_KEY` for the selected provider
 
 ---
 
@@ -841,8 +848,8 @@ logger.info(
 | **Package Manager** | uv | - | Dependency management |
 | **LLM Framework** | LangChain Core | 1.2.28 | LLM abstractions |
 | **Workflow** | LangGraph | 1.1.6 | Multi-agent orchestration |
-| **LLM Providers** | LangChain OpenAI / Google GenAI | - | OpenAI-default and Gemini chat integrations |
-| **Embeddings** | LangChain OpenAI / Google GenAI | - | OpenAI-default and Gemini vector embeddings |
+| **LLM Providers** | LangChain OpenAI / Google GenAI | - | OpenAI-default, Gemini, and Groq chat integrations |
+| **Embeddings** | LangChain OpenAI / Google GenAI / Hugging Face | - | OpenAI, Gemini, or local vector embeddings |
 | **Vector Store** | FAISS (CPU) | 1.13.2 | Similarity search |
 | **Text Splitting** | LangChain Text Splitters | 1.1.1 | Document chunking |
 | **Logging** | Structlog | 25.5.0 | Structured logging |
@@ -992,6 +999,10 @@ OPENAI_API_KEY=sk-...
 # LLM_PROVIDER=gemini
 # EMBEDDING_PROVIDER=gemini
 # GEMINI_API_KEY=...
+# For Groq chat with local embeddings:
+# LLM_PROVIDER=groq
+# EMBEDDING_PROVIDER=local
+# GROQ_API_KEY=...
 
 # Logging Configuration
 LOG_LEVEL=INFO                    # DEBUG, INFO, WARNING, ERROR, CRITICAL

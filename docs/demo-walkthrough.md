@@ -15,7 +15,14 @@ cp .env.sample .env
 # LLM_PROVIDER=gemini
 # EMBEDDING_PROVIDER=gemini
 # GEMINI_API_KEY=your-key
+# Or use Groq chat with local embeddings:
+# LLM_PROVIDER=groq
+# EMBEDDING_PROVIDER=local
+# GROQ_API_KEY=your-key
 ```
+
+The local embedding model is downloaded on first use; the initial FAISS index
+build re-embeds the local documentation corpus.
 
 Start the API on loopback only:
 

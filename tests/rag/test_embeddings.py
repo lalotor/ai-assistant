@@ -2,6 +2,7 @@ import pytest
 
 from app.rag.embeddings import (
     DEFAULT_GEMINI_EMBEDDING_MODEL,
+    DEFAULT_LOCAL_EMBEDDING_MODEL,
     DEFAULT_OPENAI_EMBEDDING_MODEL,
     get_embedding_config,
     get_embeddings,
@@ -52,6 +53,31 @@ class TestEmbeddingProvider:
 
         with pytest.raises(RuntimeError, match="GEMINI_API_KEY is required"):
             get_embeddings()
+
+    def test_creates_local_hugging_face_embeddings(self, mocker, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "local")
+        monkeypatch.setenv("LOCAL_EMBEDDING_MODEL", "local-test-model")
+        huggingface_embeddings = mocker.patch(
+            "app.rag.embeddings.HuggingFaceEmbeddings"
+        )
+
+        result = get_embeddings()
+
+        huggingface_embeddings.assert_called_once_with(
+            model_name="local-test-model",
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
+        )
+        assert result is huggingface_embeddings.return_value
+
+    def test_local_embedding_model_has_a_documented_default(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "local")
+        monkeypatch.delenv("LOCAL_EMBEDDING_MODEL", raising=False)
+
+        assert get_embedding_config() == {
+            "provider": "local",
+            "model": DEFAULT_LOCAL_EMBEDDING_MODEL,
+        }
 
     def test_unknown_embedding_provider_is_rejected(self, monkeypatch):
         monkeypatch.setenv("EMBEDDING_PROVIDER", "unsupported")

@@ -1,11 +1,13 @@
 import os
 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
 
 DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_GEMINI_EMBEDDING_MODEL = "gemini-embedding-2-preview"
+DEFAULT_LOCAL_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def get_embedding_config() -> dict[str, str]:
@@ -22,6 +24,12 @@ def get_embedding_config() -> dict[str, str]:
             "provider": provider,
             "model": os.getenv("GEMINI_EMBEDDING_MODEL")
             or DEFAULT_GEMINI_EMBEDDING_MODEL,
+        }
+    if provider == "local":
+        return {
+            "provider": provider,
+            "model": os.getenv("LOCAL_EMBEDDING_MODEL")
+            or DEFAULT_LOCAL_EMBEDDING_MODEL,
         }
 
     raise ValueError(f"Unsupported embedding provider: {provider}")
@@ -41,5 +49,11 @@ def get_embeddings():
         return GoogleGenerativeAIEmbeddings(
             model=config["model"],
             google_api_key=api_key,
+        )
+    if config["provider"] == "local":
+        return HuggingFaceEmbeddings(
+            model_name=config["model"],
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
         )
     raise ValueError(f"Unsupported embedding provider: {config['provider']}")

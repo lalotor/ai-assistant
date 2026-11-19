@@ -43,11 +43,16 @@ class EnvironmentValidator:
             description="Gemini API key for chat and/or embedding operations",
         ),
         EnvVarConfig(
+            name="GROQ_API_KEY",
+            required=False,
+            description="Groq API key for chat operations",
+        ),
+        EnvVarConfig(
             name="LLM_PROVIDER",
             required=False,
             default="openai",
             description="Chat model provider",
-            allowed_values=["openai", "gemini"]
+            allowed_values=["openai", "gemini", "groq"]
         ),
         EnvVarConfig(
             name="LLM_MODEL",
@@ -86,7 +91,13 @@ class EnvironmentValidator:
             required=False,
             default="openai",
             description="Provider for embedding generation",
-            allowed_values=["openai", "gemini"]
+            allowed_values=["openai", "gemini", "local"]
+        ),
+        EnvVarConfig(
+            name="LOCAL_EMBEDDING_MODEL",
+            required=False,
+            default="sentence-transformers/all-MiniLM-L6-v2",
+            description="Local Hugging Face sentence-transformer model",
         ),
         EnvVarConfig(
             name="GEMINI_EMBEDDING_MODEL",
@@ -164,6 +175,10 @@ class EnvironmentValidator:
             "gemini": (
                 "GEMINI_API_KEY",
                 "GEMINI_API_KEY is required when either selected provider is gemini.",
+            ),
+            "groq": (
+                "GROQ_API_KEY",
+                "GROQ_API_KEY is required when LLM_PROVIDER=groq.",
             ),
         }
         for provider in selected_providers:

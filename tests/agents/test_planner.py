@@ -7,10 +7,13 @@ the real configured planner and is skipped unless its provider key is set,
 since it is a probabilistic regression test (see below) rather than a
 deterministic unit test.
 """
+import json
 import os
 from collections import Counter
 
 import pytest
+import httpx
+from langchain_openai import ChatOpenAI
 from structlog.testing import capture_logs
 
 from app.agents.planner import get_tool_decision, planner_node
@@ -22,6 +25,7 @@ def _selected_provider_key_is_set() -> bool:
     key_name = {
         "openai": "OPENAI_API_KEY",
         "gemini": "GEMINI_API_KEY",
+        "groq": "GROQ_API_KEY",
     }.get(provider)
     return bool(key_name and os.getenv(key_name))
 
@@ -45,6 +49,95 @@ def make_structured_llm(mocker, tool="doc_retriever", reason="looked up docs", t
 
 @pytest.mark.unit
 class TestGetToolDecision:
+    def test_groq_structured_decision_accepts_a_provider_function_call(
+        self, monkeypatch
+    ):
+        monkeypatch.setenv("LLM_PROVIDER", "groq")
+        monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            if "response_format" in payload:
+                return httpx.Response(
+                    400,
+                    json={
+                        "error": {
+                            "message": (
+                                "Generated JSON does not match the expected schema. "
+                                "missing properties: 'code', 'question'"
+                            ),
+                            "type": "invalid_request_error",
+                            "code": "json_validate_failed",
+                        }
+                    },
+                    request=request,
+                )
+
+            function_name = payload["tools"][0]["function"]["name"]
+            return httpx.Response(
+                200,
+                json={
+                    "id": "chatcmpl-groq-test",
+                    "object": "chat.completion",
+                    "created": 1_700_000_000,
+                    "model": "openai/gpt-oss-20b",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": "call-planner",
+                                        "type": "function",
+                                        "function": {
+                                            "name": function_name,
+                                            "arguments": json.dumps(
+                                                {
+                                                    "tool": "doc_retriever",
+                                                    "reason": "Find the documentation fact.",
+                                                    "tool_input": {
+                                                        "query": "number of source types"
+                                                    },
+                                                }
+                                            ),
+                                        },
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 12,
+                        "total_tokens": 22,
+                    },
+                },
+                request=request,
+            )
+
+        http_client = httpx.Client(transport=httpx.MockTransport(respond))
+        model = ChatOpenAI(
+            model="openai/gpt-oss-20b",
+            api_key="test-groq-key",
+            base_url="https://api.groq.com/openai/v1",
+            http_client=http_client,
+            max_retries=0,
+        )
+        monkeypatch.setattr("app.agents.planner.get_llm", lambda: model)
+
+        try:
+            decision, _ = get_tool_decision(
+                "How many ingestion file source types do we have?"
+            )
+        finally:
+            http_client.close()
+
+        assert decision.tool == "doc_retriever"
+        assert decision.tool_input == {"query": "number of source types"}
+
     def test_does_not_log_question_or_tool_decision_reason(self, mocker):
         secret = "planner-private-needle-93e1"
         mock_llm, _ = make_structured_llm(mocker, reason=secret, tool_input={"query": secret})

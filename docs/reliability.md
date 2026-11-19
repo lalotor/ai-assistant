@@ -77,9 +77,10 @@ Final Answer.
 - Retry only failures positively classified as transient. Authentication,
   configuration, invalid-request, and malformed-output failures are not
   transient.
-- LLM calls use the OpenAI client's transient-error retry policy, configured
-  for two retries (three total attempts). The client honors `Retry-After` and
-  otherwise uses exponential backoff with jitter for retryable failures.
+- OpenAI and Groq chat calls use the OpenAI client's transient-error retry
+  policy, configured for two retries (three total attempts). The client honors
+  `Retry-After` and otherwise uses exponential backoff with jitter for
+  retryable failures.
 - Each LLM provider request, including a revision or final-review request, has
   a 30-second timeout. This replaces the provider SDK's 600-second default; it
   is an initial per-operation limit, not an end-to-end workflow deadline.
@@ -239,10 +240,10 @@ evaluation and enough revision-triggered cases for within-question comparison.
 ## Accepted observability limitation
 
 - Keep provider-client retries bounded and enabled. The installed
-  LangChain/OpenAI integration delegates requests to the OpenAI SDK without a
-  stable application-level retry callback. Do not infer recovery from latency
-  or add a second retry layer; leave `recovered` reserved until a stable
-  signal is available.
+  LangChain/OpenAI integration (used for OpenAI and Groq chat) delegates
+  requests to the OpenAI SDK without a stable application-level retry
+  callback. Do not infer recovery from latency or add a second retry layer;
+  leave `recovered` reserved until a stable signal is available.
 - Validate how reliably the Reviewer identifies irrelevant and partial
   evidence. The current sufficiency signal is LLM-judged; no deterministic
   semantic proof exists for source relevance.

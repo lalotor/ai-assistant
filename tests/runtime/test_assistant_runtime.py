@@ -233,6 +233,7 @@ class TestAssistantRuntimeRunQuestion:
         report = {"questions": 2, "evaluated": 1}
         mocker.patch("evaluation.report.build_baseline_report", return_value=report)
         runtime = AssistantRuntime()
+        runtime._is_initialized = True
 
         result = runtime.run_evaluation("smoke", revision_enabled=True)
 

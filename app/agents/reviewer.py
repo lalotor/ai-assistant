@@ -6,7 +6,7 @@ import structlog
 from app.agents.stage import record_stage_metrics
 from app.contracts.agent import AgentState, ReviewResult
 from app.prompts import format_prompt
-from app.utils.llm import get_llm, extract_model_usage
+from app.utils.llm import get_llm, get_structured_output, extract_model_usage
 
 # Get logger for this module
 logger = structlog.get_logger(__name__)
@@ -85,7 +85,11 @@ def reviewer_node(state: AgentState) -> AgentState:
     # Use structured output with Pydantic model, include_raw=True to reach
     # usage_metadata (only present on the raw AIMessage, not the parsed model)
     llm = get_llm()
-    llm_with_structure = llm.with_structured_output(ReviewResult, include_raw=True)
+    llm_with_structure = get_structured_output(
+        llm,
+        ReviewResult,
+        include_raw=True,
+    )
     outcome = llm_with_structure.invoke(review_prompt)
     response = outcome["parsed"]
     token_usage = extract_model_usage(outcome["raw"], model=llm)

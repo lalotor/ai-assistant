@@ -6,7 +6,8 @@ The project is a local, single-turn AI assistant with a Planner → Worker →
 Reviewer LangGraph workflow, optional bounded revision, hybrid documentation
 retrieval, evaluation tooling, and structured execution traces. OpenAI remains
 the default model and embedding provider; Gemini can be selected independently
-for either role.
+for either role. Groq is also available for chat, paired with local Hugging Face
+embeddings when no remote embedding API is available.
 
 The FastAPI application initializes one `AssistantRuntime` at startup and
 exposes:
@@ -51,11 +52,13 @@ No new Week 12 live evaluation or performance run was made, so there is no
 Week 12 quality, latency, or token-cost measurement to compare against prior
 weeks.
 
-Gemini is now an optional provider for chat and embeddings; OpenAI remains the
-default. Automated tests verify provider selection, conditional key validation,
-provider-neutral model usage metadata, and FAISS rebuild behavior when the
-embedding model changes. The user's Gemini key was not read or tested, so a
-live provider request remains to be verified locally.
+Gemini remains an optional provider for chat and embeddings, and Groq is
+available for chat; OpenAI remains the default. Local Hugging Face embeddings
+allow RAG to run without an OpenAI or Gemini embedding key. Automated tests
+verify provider selection, conditional key validation, provider-neutral model
+usage metadata, and FAISS rebuild behavior when the embedding model changes.
+Live Groq requests and local model downloads have not been verified with user
+credentials or external model services.
 
 The latest existing comparison is the [Week 11 revision report](../../evaluation/reports/revision_comparison.md):
 three full runs per mode over 11 questions (33 baseline and 33 revision

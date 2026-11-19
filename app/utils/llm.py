@@ -1,6 +1,8 @@
 import os
 from typing import Any, Optional
+from pydantic import BaseModel
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.runnables import Runnable
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
@@ -10,6 +12,7 @@ LLM_REQUEST_TIMEOUT_SECONDS = 30
 _DEFAULT_MODELS = {
     "openai": "gpt-5.4-mini",
     "gemini": "gemini-3.5-flash-lite",
+    "groq": "openai/gpt-oss-20b",
 }
 
 
@@ -41,6 +44,18 @@ def get_llm(
             timeout=LLM_REQUEST_TIMEOUT_SECONDS,
             **({"temperature": temperature} if temperature is not None else {}),
         )
+    if provider == "groq":
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError("GROQ_API_KEY is required when LLM_PROVIDER=groq.")
+        return ChatOpenAI(
+            model=model_name,
+            api_key=api_key,
+            base_url="https://api.groq.com/openai/v1",
+            temperature=0 if temperature is None else temperature,
+            max_retries=LLM_MAX_RETRIES,
+            request_timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+        )
     raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")
 
 
@@ -50,6 +65,19 @@ def get_model_name(model: BaseChatModel) -> str:
     if not isinstance(model_name, str) or not model_name:
         raise ValueError("Configured chat model does not expose a model identifier.")
     return model_name
+
+
+def get_structured_output(
+    model: BaseChatModel,
+    schema: type[BaseModel],
+    *,
+    include_raw: bool = False,
+) -> Runnable[Any, Any]:
+    """Create structured output using the configured provider's compatible mode."""
+    options: dict[str, Any] = {"include_raw": include_raw}
+    if os.getenv("LLM_PROVIDER", "openai").lower() == "groq":
+        options["method"] = "function_calling"
+    return model.with_structured_output(schema, **options)
 
 
 def extract_model_usage(ai_message: Any, model: BaseChatModel) -> Optional[dict]:

@@ -10,6 +10,10 @@ cp .env.sample .env
 # LLM_PROVIDER=gemini
 # EMBEDDING_PROVIDER=gemini
 # GEMINI_API_KEY=your-key
+# Or use Groq chat with local embeddings:
+# LLM_PROVIDER=groq
+# EMBEDDING_PROVIDER=local
+# GROQ_API_KEY=your-key
 ```
 
 The first run initializes the local vector store and may take 1-2 minutes.
@@ -22,6 +26,17 @@ may incur provider usage. The Gemini chat default follows the model's
 temperature default; OpenAI retains the existing temperature of `0`.
 See [ADR 0004](./docs/adr/0004-selectable-gemini-model-provider.md) for the
 provider and embedding-index compatibility decision.
+
+To use Groq for chat without another paid embedding API, set
+`LLM_PROVIDER=groq`, `GROQ_API_KEY`, and `EMBEDDING_PROVIDER=local`. Groq is
+called through the OpenAI-compatible Chat Completions endpoint; `LLM_MODEL`
+defaults to `openai/gpt-oss-20b`. The local embedding model defaults to
+`sentence-transformers/all-MiniLM-L6-v2`, downloads on first use, and is
+configurable with `LOCAL_EMBEDDING_MODEL`. This model runs locally on CPU and
+requires no Gemini or OpenAI key. Groq structured responses use function
+calling to accommodate Groq's schema handling. Selecting local embeddings
+rebuilds the FAISS index and re-embeds the corpus. See
+[ADR 0005](./docs/adr/0005-groq-chat-and-local-embeddings.md).
 
 ## FastAPI
 
